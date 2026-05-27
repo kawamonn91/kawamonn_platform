@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="glass-container" style="width: 800px; max-width: 90vw; padding: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0; font-size: 1.8rem;">File Manager</h2>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <span style="color: rgba(255,255,255,0.7);">{{ user.username }}</span>
+            <a href="{{ url_for('logout') }}" class="btn-submit"
+                style="background: #ef4444; width: auto; margin: 0; padding: 8px 15px; font-size: 0.9rem; text-decoration: none; display: inline-block;">Logout</a>
+        </div>
+    </div>
+
+    <!-- Breadcrumbs -->
+    <div
+        style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-size: 0.9rem; color: rgba(255,255,255,0.7); overflow-x: auto; white-space: nowrap; padding-bottom: 5px;">
+        <a href="{{ url_for('index') }}" style="color: var(--accent-color); text-decoration: none;">Available
+            Storage</a>
+
+        {% for crumb in breadcrumbs %}
+        <span>/</span>
+        <a href="{{ url_for('index', path=crumb.path) }}" style="color: var(--accent-color); text-decoration: none;">{{
+            crumb.name }}</a>
+        {% endfor %}
+    </div>
+
+    <!-- Toolbar -->
+    <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+        <!-- Upload -->
+        <form method="POST" action="{{ url_for('upload_file') }}" enctype="multipart/form-data"
+            style="display: flex; gap: 5px; align-items: center;">
+            <input type="hidden" name="path" value="{{ current_path }}">
+            <label for="file-upload" class="btn-submit"
+                style="margin: 0; width: auto; cursor: pointer; background: #3b82f6; display: flex; align-items: center; gap: 5px;">
+                📤 Upload
+            </label>
+            <input id="file-upload" type="file" name="file" onchange="this.form.submit()" style="display: none;">
+        </form>
+
+        <!-- New Folder -->
+        <button onclick="document.getElementById('new-folder-form').style.display='flex'" class="btn-submit"
+            style="margin: 0; width: auto; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
+            📁 New Folder
+        </button>
+
+        <!-- New File -->
+        <button onclick="document.getElementById('new-file-form').style.display='flex'" class="btn-submit"
+            style="margin: 0; width: auto; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);">
+            📄 New File
+        </button>
+    </div>
+
+    <!-- Inline Interaction Forms (Hidden by default) -->
+    <form id="new-folder-form" method="POST" action="{{ url_for('create_folder') }}"
+        style="display: none; gap: 10px; margin-bottom: 20px; align-items: center;">
+        <input type="hidden" name="path" value="{{ current_path }}">
+        <input type="text" name="folder_name" placeholder="Folder Name" required
+            style="width: 200px; padding: 8px; border-bottom: 1px solid var(--accent-color);">
+        <button type="submit" class="btn-submit" style="margin: 0; width: auto; padding: 8px 15px;">Create</button>
+        <button type="button" onclick="this.parentElement.style.display='none'"
+            style="background: none; border: none; color: white; cursor: pointer;">✕</button>
+    </form>
+
+    <form id="new-file-form" method="POST" action="{{ url_for('create_file') }}"
+        style="display: none; gap: 10px; margin-bottom: 20px; align-items: center;">
+        <input type="hidden" name="path" value="{{ current_path }}">
+        <input type="text" name="filename" placeholder="File Name (e.g. note.txt)" required
+            style="width: 200px; padding: 8px; border-bottom: 1px solid var(--accent-color);">
+        <button type="submit" class="btn-submit" style="margin: 0; width: auto; padding: 8px 15px;">Create</button>
+        <button type="button" onclick="this.parentElement.style.display='none'"
+            style="background: none; border: none; color: white; cursor: pointer;">✕</button>
+    </form>
+
+    <!-- File List -->
+    <div class="file-list"
+        style="max-height: 500px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 10px;">
+        <table style="width: 100%; border-collapse: collapse; color: rgba(255,255,255,0.8);">
+            <thead style="background: rgba(255,255,255,0.05); text-align: left;">
+                <tr>
+                    <th style="padding: 12px 15px; font-weight: 500;">Name</th>
+                    <th style="padding: 12px 15px; font-weight: 500;">Size</th>
+                    <th style="padding: 12px 15px; font-weight: 500;">Modified</th>
+                    <th style="padding: 12px 15px; font-weight: 500; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if current_path %}
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <td colspan="4" style="padding: 10px 15px;">
+                        <a href="{{ url_for('index', path=current_path.rsplit('/', 1)[0] if '/' in current_path else '') }}"
+                            style="color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.2rem;">🔙</span> ..
+                        </a>
+                    </td>
+                </tr>
+                {% endif %}
+
+                {% for item in items %}
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;">
+                    <td style="padding: 10px 15px;">
+                        {% if item.is_dir %}
+                        <a href="{{ url_for('index', path=item.path) }}"
+                            style="color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px; font-weight: 500;">
+                            <span style="font-size: 1.2rem;">📁</span> {{ item.name }}
+                        </a>
+                        {% else %}
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.2rem;">📄</span> {{ item.name }}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 10px 15px; color: rgba(255,255,255,0.5); font-size: 0.9rem;">{{ item.size }}
+                    </td>
+                    <td style="padding: 10px 15px; color: rgba(255,255,255,0.5); font-size: 0.9rem;">{{ item.mtime }}
+                    </td>
+                    <td style="padding: 10px 15px; text-align: right;">
+                        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                            {% if not item.is_dir %}
+                            <a href="{{ url_for('edit_file', path=item.path) }}" title="編集"
+                                style="text-decoration: none;">
+                                <button
+                                    style="background: none; border: none; font-size: 1.1rem; cursor: pointer; padding: 5px;"
+                                    title="テキストエディタで編集">✏️</button>
+                            </a>
+                            <a href="{{ url_for('download_file', path=item.path) }}" title="Download"
+                                style="text-decoration: none;">
+                                <button
+                                    style="background: none; border: none; font-size: 1.1rem; cursor: pointer; padding: 5px;">⬇️</button>
+                            </a>
+                            {% endif %}
+
+                            <form method="POST" action="{{ url_for('delete_item') }}" style="display: inline;">
+                                <input type="hidden" name="path" value="{{ item.path }}">
+                                <button type="submit" onclick="return confirm('Delete {{ item.name }}?')" title="Delete"
+                                    style="background: none; border: none; font-size: 1.1rem; cursor: pointer; padding: 5px;">🗑️</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                {% if not current_path %}
+                <tr>
+                    <td colspan="4" style="padding: 30px; text-align: center; color: rgba(255,255,255,0.3);">
+                        Empty Storage
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    tr:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+</style>
+{% endblock %}

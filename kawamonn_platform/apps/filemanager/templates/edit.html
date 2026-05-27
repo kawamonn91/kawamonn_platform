@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="glass-container" style="width: 900px; max-width: 95vw; padding: 30px;">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <a href="{{ url_for('index', path=parent_path) }}"
+               style="color: rgba(255,255,255,0.6); text-decoration: none; font-size: 1.4rem; transition: color 0.2s;"
+               title="ファイル一覧に戻る">←</a>
+            <div>
+                <h2 style="margin: 0; font-size: 1.4rem;">✏️ {{ filename }}</h2>
+                <span style="font-size: 0.8rem; color: rgba(255,255,255,0.4);">{{ path }}</span>
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <span id="save-status" style="font-size: 0.85rem; color: rgba(255,255,255,0.4); transition: color 0.3s;"></span>
+            <span style="color: rgba(255,255,255,0.7); font-size: 0.9rem;">{{ user.username }}</span>
+            <a href="{{ url_for('logout') }}" class="btn-submit"
+               style="background: #ef4444; width: auto; margin: 0; padding: 6px 12px; font-size: 0.85rem; text-decoration: none; display: inline-block;">
+               Logout
+            </a>
+        </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap;">
+        <button id="btn-save" onclick="saveFile()" class="btn-submit"
+            style="margin: 0; width: auto; padding: 8px 20px; background: #22c55e; display: flex; align-items: center; gap: 6px;">
+            💾 保存 <span style="font-size: 0.75rem; opacity: 0.8;">(Ctrl+S)</span>
+        </button>
+        <a href="{{ url_for('download_file', path=path) }}" class="btn-submit"
+            style="margin: 0; width: auto; padding: 8px 20px; background: #3b82f6; display: flex; align-items: center; gap: 6px; text-decoration: none;">
+            ⬇️ ダウンロード
+        </a>
+        <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
+            <label style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">
+                フォント:
+                <select id="font-size-select" onchange="changeFontSize(this.value)"
+                    style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; padding: 3px 8px; font-size: 0.85rem;">
+                    <option value="12">12px</option>
+                    <option value="14" selected>14px</option>
+                    <option value="16">16px</option>
+                    <option value="18">18px</option>
+                </select>
+            </label>
+            <label style="font-size: 0.85rem; color: rgba(255,255,255,0.6); display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                <input type="checkbox" id="word-wrap" onchange="toggleWordWrap(this.checked)" style="cursor: pointer;"> 折り返し
+            </label>
+        </div>
+    </div>
+
+    <!-- Line numbers + Editor -->
+    <div style="position: relative; border-radius: 10px; overflow: hidden; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; height: 550px;">
+            <!-- Line Numbers -->
+            <div id="line-numbers"
+                 style="min-width: 50px; background: rgba(0,0,0,0.3); color: rgba(255,255,255,0.25);
+                        font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.6;
+                        padding: 15px 8px; text-align: right; overflow: hidden; user-select: none;
+                        border-right: 1px solid rgba(255,255,255,0.07); white-space: pre;">1</div>
+
+            <!-- Textarea -->
+            <textarea id="editor"
+                style="flex: 1; background: transparent; color: rgba(255,255,255,0.9);
+                       font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.6;
+                       padding: 15px; border: none; outline: none; resize: none;
+                       overflow: auto; tab-size: 4; white-space: pre;"
+                spellcheck="false"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off">{{ content }}</textarea>
+        </div>
+
+        <!-- Status bar -->
+        <div style="background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.07);
+                    padding: 4px 15px; display: flex; gap: 20px; font-size: 0.78rem; color: rgba(255,255,255,0.35);">
+            <span id="cursor-pos">行 1, 列 1</span>
+            <span id="char-count">0 文字</span>
+            <span id="line-count">1 行</span>
+        </div>
+    </div>
+
+    <!-- Hidden form for POST submit -->
+    <form id="save-form" method="POST" action="{{ url_for('edit_file', path=path) }}" style="display: none;">
+        <input type="hidden" name="path" value="{{ path }}">
+        <textarea name="content" id="save-content"></textarea>
+    </form>
+</div>
+
+<style>
+    textarea#editor::selection {
+        background: rgba(99, 102, 241, 0.4);
+    }
+    #btn-save:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
+    }
+    .glass-container {
+        /* エディタページはより広くしたいので上書き */
+    }
+</style>
+
+<script>
+    const editor = document.getElementById('editor');
+    const lineNumbers = document.getElementById('line-numbers');
+    const saveStatus = document.getElementById('save-status');
+    let isDirty = false;
+    let saveTimer = null;
+
+    // 行番号を更新
+    function updateLineNumbers() {
+        const lines = editor.value.split('\n').length;
+        const nums = [];
+        for (let i = 1; i <= lines; i++) nums.push(i);
+        lineNumbers.textContent = nums.join('\n');
+    }
+
+    // ステータスバー更新
+    function updateStatus() {
+        const val = editor.value;
+        const lines = val.split('\n');
+        const selStart = editor.selectionStart;
+        const textBefore = val.substring(0, selStart);
+        const linesBefore = textBefore.split('\n');
+        const row = linesBefore.length;
+        const col = linesBefore[linesBefore.length - 1].length + 1;
+
+        document.getElementById('cursor-pos').textContent = `行 ${row}, 列 ${col}`;
+        document.getElementById('char-count').textContent = `${val.length.toLocaleString()} 文字`;
+        document.getElementById('line-count').textContent = `${lines.length} 行`;
+    }
+
+    // スクロール同期
+    editor.addEventListener('scroll', () => {
+        lineNumbers.scrollTop = editor.scrollTop;
+    });
+
+    // 入力イベント
+    editor.addEventListener('input', () => {
+        updateLineNumbers();
+        updateStatus();
+        isDirty = true;
+        saveStatus.textContent = '● 未保存';
+        saveStatus.style.color = '#f59e0b';
+
+        // 自動保存ヒント（5秒後）
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            if (isDirty) {
+                saveStatus.textContent = '● Ctrl+S で保存';
+                saveStatus.style.color = 'rgba(255,255,255,0.4)';
+            }
+        }, 5000);
+    });
+
+    editor.addEventListener('keyup', updateStatus);
+    editor.addEventListener('click', updateStatus);
+
+    // Tab キー対応
+    editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(end);
+            editor.selectionStart = editor.selectionEnd = start + 4;
+            updateLineNumbers();
+            isDirty = true;
+        }
+        // Ctrl+S で保存
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            saveFile();
+        }
+    });
+
+    function saveFile() {
+        document.getElementById('save-content').value = editor.value;
+        document.getElementById('save-form').submit();
+    }
+
+    function changeFontSize(size) {
+        editor.style.fontSize = size + 'px';
+        lineNumbers.style.fontSize = size + 'px';
+    }
+
+    function toggleWordWrap(wrap) {
+        editor.style.whiteSpace = wrap ? 'pre-wrap' : 'pre';
+        editor.style.overflowX = wrap ? 'hidden' : 'auto';
+    }
+
+    // ページ離脱時の警告
+    window.addEventListener('beforeunload', (e) => {
+        if (isDirty) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
+    // 初期化
+    updateLineNumbers();
+    updateStatus();
+    editor.focus();
+</script>
+{% endblock %}

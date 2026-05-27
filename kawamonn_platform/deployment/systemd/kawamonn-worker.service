@@ -1,0 +1,14 @@
+[Unit]
+Description=Kawamonn Celery Worker
+After=network.target redis-server.service
+
+[Service]
+User=webapp
+Group=webapp
+WorkingDirectory=/home/pi/hdd/ssh/kawamonn_platform
+Environment="PYTHONPATH=/home/pi/hdd/ssh/kawamonn_platform"
+ExecStart=/home/pi/hdd/ssh/kawamonn_platform/venv/bin/celery -A worker.celery_app.celery_app worker --loglevel=info
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

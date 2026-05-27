@@ -1,0 +1,14 @@
+[Unit]
+Description=Kawamonn Home App
+After=network.target
+
+[Service]
+User=webapp
+Group=webapp
+WorkingDirectory=/home/pi/hdd/ssh/kawamonn_platform
+Environment="PYTHONPATH=/home/pi/hdd/ssh/kawamonn_platform"
+ExecStart=/home/pi/hdd/ssh/kawamonn_platform/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:5005 apps.home.app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
