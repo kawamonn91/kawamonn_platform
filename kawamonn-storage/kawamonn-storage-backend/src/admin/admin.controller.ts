@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request, ForbiddenException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { AuthService } from '../auth/auth.service';
@@ -14,11 +14,24 @@ export class AdminController {
     ) { }
 
     @Get('users')
-    async listUsers(@Request() req) {
+    async listUsers(
+        @Request() req,
+        @Query('search') search?: string,
+        @Query('page') page: string = '1',
+        @Query('per_page') perPage: string = '20',
+    ) {
         if (req.user.role !== 'admin') {
             throw new ForbiddenException('Admin access required');
         }
-        return this.adminService.listUsers();
+        return this.adminService.listUsers(search, parseInt(page, 10), parseInt(perPage, 10));
+    }
+
+    @Get('users/:id')
+    async getUserDetail(@Request() req, @Param('id') id: string) {
+        if (req.user.role !== 'admin') {
+            throw new ForbiddenException('Admin access required');
+        }
+        return this.adminService.getUserDetail(id);
     }
 
     @Post('users')
@@ -66,6 +79,26 @@ export class AdminController {
         }
         await this.adminService.deleteUser(id);
         return { status: 'deleted' };
+    }
+
+    @Post('users/:id/reset-password')
+    async resetPassword(@Request() req, @Param('id') id: string) {
+        if (req.user.role !== 'admin') {
+            throw new ForbiddenException('Admin access required');
+        }
+        return this.adminService.resetPassword(id);
+    }
+
+    @Post('users/:id/quota')
+    async updateQuota(
+        @Request() req,
+        @Param('id') id: string,
+        @Body() body: { quota_gb: number },
+    ) {
+        if (req.user.role !== 'admin') {
+            throw new ForbiddenException('Admin access required');
+        }
+        return this.adminService.updateQuota(id, body.quota_gb);
     }
 
     @Post('broadcast')
