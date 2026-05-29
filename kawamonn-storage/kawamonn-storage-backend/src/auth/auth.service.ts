@@ -106,11 +106,29 @@ export class AuthService {
 
         const hashedPassword = await argon2.hash(registerDto.password);
 
+        // Calculate expiry_at for @u-aizu.ac.jp accounts (4 years)
+        // Migrated from: Flask register app (apps/register/app.py)
+        let expiryAt: Date | undefined;
+        if (registerDto.email.toLowerCase().endsWith('@u-aizu.ac.jp')) {
+            expiryAt = new Date();
+            expiryAt.setFullYear(expiryAt.getFullYear() + 4);
+        }
+
+        // Allocate fs_project_id for ext4 project quota
+        // Migrated from: Flask register app (project_id = 10000 + user_id)
+        const maxProjectId = await this.prisma.user.aggregate({
+            _max: { fs_project_id: true },
+        });
+        const fsProjectId = (maxProjectId._max.fs_project_id ?? 9999) + 1;
+
         const newUser = await this.usersService.createUser({
             email: registerDto.email,
             account_name,
             password_hash: hashedPassword,
-            role: 'user'
+            role: 'user',
+            expiry_at: expiryAt,
+            fs_project_id: fsProjectId,
+            password_last_set_at: new Date(),
         });
 
         // Sync to host for SSH access
@@ -124,6 +142,15 @@ export class AuthService {
             execFileSync('sudo', ['chpasswd'], {
                 input: `${account_name}:${registerDto.password}\n`
             });
+
+            // Create user directory and set ext4 project quota
+            // Migrated from: Flask register app (subprocess.check_call(['sudo', script_path, ...]))
+            execFileSync('sudo', [
+                '/home/pi/hdd/ssh/kawamonn_platform/scripts/create_user_dir.sh',
+                account_name,
+                String(fsProjectId),
+                String(newUser.quota_bytes),
+            ]);
         } catch (e) {
             console.warn('Host user creation during registration failed (non-critical):', e.message);
         }

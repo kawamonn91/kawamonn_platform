@@ -10,9 +10,11 @@ import { SshModule } from './ssh/ssh.module';
 import { TerminalModule } from './terminal/terminal.module';
 import { FileBrowserModule } from './filebrowser/filebrowser.module';
 import { SyncModule } from './sync/sync.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { join } from 'path';
 
@@ -54,6 +56,8 @@ import { join } from 'path';
     TerminalModule,
     FileBrowserModule,
     SyncModule,
+    ScheduleModule.forRoot(),
+    SchedulerModule,
   ],
   controllers: [AppController],
   providers: [
