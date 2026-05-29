@@ -1,0 +1,72 @@
+mermaid
+erDiagram
+    users ||--o{ files : "owns"
+    users ||--o{ audit_logs : "trigger"
+    users ||--o{ ssh_containers : "has"
+    files ||--o{ file_versions : "has"
+    files ||--o{ shares : "has"
+
+    users {
+        uuid id PK
+        string account_name "UNIQUE"
+        string email "UNIQUE"
+        string password_hash
+        string role
+        bigint quota_bytes
+        bigint used_bytes
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    files {
+        uuid id PK
+        uuid owner_id FK
+        uuid parent_id FK "NULLABLE"
+        string name
+        bigint size
+        string mime_type
+        string storage_key
+        integer version
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    file_versions {
+        uuid id PK
+        uuid file_id FK
+        string storage_key
+        integer version_number
+        timestamp created_at
+    }
+
+    shares {
+        uuid id PK
+        uuid file_id FK
+        string token "UNIQUE"
+        timestamp expires_at "NULLABLE"
+        string password_hash "NULLABLE"
+        integer max_downloads "NULLABLE"
+        uuid created_by FK
+        timestamp created_at
+    }
+
+    audit_logs {
+        uuid id PK
+        uuid actor_id FK "NULLABLE"
+        string action
+        string target_type
+        uuid target_id
+        jsonb metadata
+        timestamp created_at
+    }
+
+    ssh_containers {
+        uuid id PK
+        string username FK "refers to users.account_name"
+        string container_id
+        string image_tag
+        string cpu_limit
+        string memory_limit
+        timestamp created_at
+        timestamp last_started_at
+    }
