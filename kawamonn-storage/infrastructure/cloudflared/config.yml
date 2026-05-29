@@ -1,0 +1,9 @@
+tunnel: kawamonn-tunnel
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: storage.kawamonn.com
+    service: http://localhost:8080
+  - hostname: ssh.kawamonn.com
+    service: ssh://localhost:22
+  - service: http_status:404

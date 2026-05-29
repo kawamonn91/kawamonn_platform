@@ -1,0 +1,59 @@
+# ===================
+# Dependencies
+# ===================
+node_modules/
+venv/
+
+# ===================
+# Python
+# ===================
+__pycache__/
+*.pyc
+*.pyo
+
+# ===================
+# Build outputs
+# ===================
+dist/
+
+# ===================
+# Runtime / Database
+# ===================
+*.db
+gunicorn.ctl
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+
+# ===================
+# Docker runtime data
+# ===================
+postgres_data/
+minio_data/
+redis_data/
+**/postgres_data/
+**/minio_data/
+**/redis_data/
+
+# ===================
+# Environment files
+# ===================
+.env
+
+# ===================
+# OS files
+# ===================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ===================
+# User data (runtime storage - DO NOT DELETE)
+# ===================
+users/
+kawamonn/
+katsumi/
+toya/
+admin_kawamonn/
+myproject/

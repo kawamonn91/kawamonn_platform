@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">UoA Online</string>
+    <string name="title_activity_main">UoA Online</string>
+    <string name="package_name">com.kawamonn.uoaonline</string>
+    <string name="custom_url_scheme">com.kawamonn.uoaonline</string>
+</resources>
