@@ -52,14 +52,22 @@ export class AdminService {
             this.prisma.user.count({ where: whereClause }),
         ]);
 
+        const mapped = users.map(u => ({
+            ...u,
+            quota_bytes: u.quota_bytes.toString(),
+            used_bytes: u.used_bytes.toString(),
+            created_at: u.created_at.toISOString(),
+            expiry_at: u.expiry_at?.toISOString() || null,
+        }));
+
+        // Backward compatibility: return plain array when no search/pagination params
+        // (existing frontend expects Array.isArray(res.data) === true)
+        if (!search && page === 1 && perPage === 20) {
+            return mapped;
+        }
+
         return {
-            items: users.map(u => ({
-                ...u,
-                quota_bytes: u.quota_bytes.toString(),
-                used_bytes: u.used_bytes.toString(),
-                created_at: u.created_at.toISOString(),
-                expiry_at: u.expiry_at?.toISOString() || null,
-            })),
+            items: mapped,
             total_count: total,
             page,
             per_page: perPage,
