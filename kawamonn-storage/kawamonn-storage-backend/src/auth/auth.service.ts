@@ -146,7 +146,7 @@ export class AuthService {
             // Create user directory and set ext4 project quota
             // Migrated from: Flask register app (subprocess.check_call(['sudo', script_path, ...]))
             execFileSync('sudo', [
-                '/home/pi/hdd/ssh/kawamonn_platform/scripts/create_user_dir.sh',
+                '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/create_user_dir.sh',
                 account_name,
                 String(fsProjectId),
                 String(newUser.quota_bytes),

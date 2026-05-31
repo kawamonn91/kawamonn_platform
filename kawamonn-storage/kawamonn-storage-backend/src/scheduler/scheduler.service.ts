@@ -170,7 +170,7 @@ export class SchedulerService {
                 // Archive user data via shell script (same as Flask version)
                 const { execFileSync } = require('child_process');
                 execFileSync('sudo', [
-                    '/home/pi/hdd/ssh/kawamonn_platform/scripts/delete_user.sh',
+                    '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/delete_user.sh',
                     user.account_name,
                     'archive',
                 ]);

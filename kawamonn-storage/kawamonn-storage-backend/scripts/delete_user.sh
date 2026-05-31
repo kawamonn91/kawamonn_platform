@@ -7,7 +7,7 @@ USERNAME=$1
 ACTION=$2
 BASE_DIR="/home/pi/hdd/ssh/users"
 USER_DIR="$BASE_DIR/$USERNAME"
-ARCHIVE_DIR="/home/pi/hdd/ssh/archives" # Or specific archive location
+ARCHIVE_DIR="/home/pi/hdd/ssh/archives"
 
 if [ -z "$USERNAME" ] || [ -z "$ACTION" ]; then
     echo "Usage: $0 <username> <delete|archive>"
@@ -28,11 +28,3 @@ fi
 # Delete
 rm -rf "$USER_DIR"
 echo "Deleted $USER_DIR"
-
-# Note: Quota limits for the project ID remain in quota file until cleared, 
-# but simply removing the files frees the space.
-# We could technically reset quota to 0 for that project ID to be clean
-# But since project IDs might be reused or not, we'll leave it or reset?
-# Better to reset to 0 to avoid confusion if ID reused (though models should handle unique IDs)
-# We need the project ID to reset quota. But we only passed username.
-# The caller (python) should handle ID reuse or we accept dangling quota entries (harmless if ID not reused).

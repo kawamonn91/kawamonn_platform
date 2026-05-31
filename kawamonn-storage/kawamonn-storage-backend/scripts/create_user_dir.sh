@@ -31,16 +31,12 @@ fi
 # Set Project ID
 # We assume 'project' feature is enabled on the filesystem.
 chattr +P "$USER_DIR"
-# Force project ID assignment using chattr -p (if supported) or set_project (xfs) or repquota tools
 # For ext4 with project quota enabled:
 chattr -p "$PROJECT_ID" "$USER_DIR"
 # Verify
 lsattr -p "$USER_DIR"
 
 # Set Quota Limits
-# block limit is in KB usually for setquota?
-# man setquota: -F quotaformat -P projid
-# limits are: block-soft block-hard inode-soft inode-hard
 # bytes to KB:
 BLOCK_LIMIT_KB=$((QUOTA_BYTES / 1024))
 
