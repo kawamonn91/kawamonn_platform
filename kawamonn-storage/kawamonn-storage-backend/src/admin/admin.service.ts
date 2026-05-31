@@ -210,7 +210,7 @@ export class AdminService {
             try {
                 const { execFileSync } = require('child_process');
                 execFileSync('sudo', [
-                    '/home/pi/hdd/ssh/kawamonn_platform/scripts/update_quota.sh',
+                    '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/update_quota.sh',
                     String(user.fs_project_id),
                     String(quotaBytes),
                 ]);

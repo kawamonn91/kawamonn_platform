@@ -25,11 +25,16 @@ export interface FileEntry {
 export class FileBrowserService {
     constructor(private readonly syncService: SyncService, private readonly prisma: PrismaService) {}
     /**
-     * ユーザーのルートパス (/home/pi/hdd/ssh/{username}) を返す。
+     * ユーザーのルートパス (/home/pi/hdd/ssh/{username} または /home/pi/hdd/ssh/users/{username}) を返す。
      * ホームディレクトリが存在しない場合は作成する。
      */
-    private userRoot(username: string): string {
-        const root = path.join(SSH_BASE, username);
+    private async userRoot(username: string): Promise<string> {
+        const user = await this.prisma.user.findUnique({
+            where: { account_name: username },
+            select: { role: true },
+        });
+        const isMin = user && user.role === 'admin';
+        const root = isMin ? path.join(SSH_BASE, username) : path.join(SSH_BASE, 'users', username);
         if (!fs.existsSync(root)) {
             fs.mkdirSync(root, { recursive: true });
         }
@@ -40,8 +45,8 @@ export class FileBrowserService {
      * パストラバーサル攻撃を防止しつつ、絶対パスを解決する。
      * ユーザーのルートディレクトリ外へのアクセスは ForbiddenException を投げる。
      */
-    private resolveSafe(username: string, relPath: string): string {
-        const root = this.userRoot(username);
+    private async resolveSafe(username: string, relPath: string): Promise<string> {
+        const root = await this.userRoot(username);
         // relPath が空または '/' の場合はルートを返す
         const normalized = relPath ? relPath.replace(/\\/g, '/') : '/';
         const absolute = path.resolve(root, normalized.startsWith('/') ? normalized.slice(1) : normalized);
@@ -54,7 +59,7 @@ export class FileBrowserService {
 
     /** ディレクトリ内容を一覧取得 */
     async listDir(username: string, relPath: string = '/'): Promise<FileEntry[]> {
-        const dirPath = this.resolveSafe(username, relPath);
+        const dirPath = await this.resolveSafe(username, relPath);
 
         if (!fs.existsSync(dirPath)) {
             throw new NotFoundException(`Directory not found: ${relPath}`);
@@ -100,7 +105,7 @@ export class FileBrowserService {
 
     /** ファイル内容を Buffer として返す */
     async readFile(username: string, relPath: string): Promise<{ buffer: Buffer; mime: string; name: string }> {
-        const filePath = this.resolveSafe(username, relPath);
+        const filePath = await this.resolveSafe(username, relPath);
 
         if (!fs.existsSync(filePath)) {
             throw new NotFoundException(`File not found: ${relPath}`);
@@ -139,7 +144,7 @@ export class FileBrowserService {
 
     /** ファイルをアップロード（上書き） */
     async writeFile(username: string, relPath: string, buffer: Buffer): Promise<void> {
-        const filePath = this.resolveSafe(username, relPath);
+        const filePath = await this.resolveSafe(username, relPath);
         const dir = path.dirname(filePath);
 
         if (!fs.existsSync(dir)) {
@@ -157,7 +162,7 @@ export class FileBrowserService {
 
     /** ディレクトリ作成 */
     async mkdir(username: string, relPath: string): Promise<void> {
-        const dirPath = this.resolveSafe(username, relPath);
+        const dirPath = await this.resolveSafe(username, relPath);
 
         if (fs.existsSync(dirPath)) {
             throw new BadRequestException('Directory already exists');
@@ -174,7 +179,7 @@ export class FileBrowserService {
 
     /** ファイルまたはディレクトリを削除 */
     async deleteItem(username: string, relPath: string): Promise<void> {
-        const itemPath = this.resolveSafe(username, relPath);
+        const itemPath = await this.resolveSafe(username, relPath);
 
         if (!fs.existsSync(itemPath)) {
             throw new NotFoundException(`Not found: ${relPath}`);
@@ -196,8 +201,8 @@ export class FileBrowserService {
 
     /** ファイルまたはディレクトリの名前変更/移動 */
     async rename(username: string, oldPath: string, newPath: string): Promise<void> {
-        const src = this.resolveSafe(username, oldPath);
-        const dst = this.resolveSafe(username, newPath);
+        const src = await this.resolveSafe(username, oldPath);
+        const dst = await this.resolveSafe(username, newPath);
 
         if (!fs.existsSync(src)) {
             throw new NotFoundException(`Not found: ${oldPath}`);

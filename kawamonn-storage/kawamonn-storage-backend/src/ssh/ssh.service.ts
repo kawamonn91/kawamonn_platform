@@ -15,7 +15,15 @@ export class SshService {
     async provisionContainer(username: string, publicKey: string = '') {
         const containerName = `kawamonn-ssh-${username}-${Math.random().toString(36).slice(-6)}`;
         const memoryLimit = 512 * 1024 * 1024; // 512MB
-        const hostMountPath = path.join('/home/pi/hdd/ssh', username);
+
+        const user = await this.prisma.user.findUnique({
+            where: { account_name: username },
+            select: { role: true },
+        });
+        const isMin = user && user.role === 'admin';
+        const hostMountPath = isMin 
+            ? path.join('/home/pi/hdd/ssh', username)
+            : path.join('/home/pi/hdd/ssh/users', username);
 
         if (!fs.existsSync(hostMountPath)) {
             fs.mkdirSync(hostMountPath, { recursive: true });

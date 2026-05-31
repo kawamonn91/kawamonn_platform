@@ -51,9 +51,19 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     // Public API: MinIO → FS (FilesService から呼び出す)
     // =========================================================
 
+    private async getUserHomePath(username: string): Promise<string> {
+        const user = await this.prisma.user.findUnique({
+            where: { account_name: username },
+            select: { role: true },
+        });
+        const isMin = user && user.role === 'admin';
+        return isMin ? path.join(SSH_BASE, username) : path.join(SSH_BASE, 'users', username);
+    }
+
     /** MinIO にアップロードされたファイルを FS に書き込む */
     async writeFileToFs(username: string, relPath: string, buffer: Buffer): Promise<void> {
-        const absPath = path.join(SSH_BASE, username, relPath);
+        const home = await this.getUserHomePath(username);
+        const absPath = path.join(home, relPath);
         this.markSyncing(absPath);
         try {
             const dir = path.dirname(absPath);
@@ -67,7 +77,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
 
     /** MinIO でフォルダが作成されたとき FS にも作成する */
     async createDirInFs(username: string, relPath: string): Promise<void> {
-        const absPath = path.join(SSH_BASE, username, relPath);
+        const home = await this.getUserHomePath(username);
+        const absPath = path.join(home, relPath);
         this.markSyncing(absPath);
         try {
             fs.mkdirSync(absPath, { recursive: true });
@@ -79,7 +90,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
 
     /** MinIO からファイル/フォルダが削除されたとき FS からも削除する */
     async deleteFromFs(username: string, relPath: string): Promise<void> {
-        const absPath = path.join(SSH_BASE, username, relPath);
+        const home = await this.getUserHomePath(username);
+        const absPath = path.join(home, relPath);
         this.markSyncing(absPath);
         try {
             if (!fs.existsSync(absPath)) return;
@@ -101,7 +113,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
 
     /** FileBrowser でアップロードされたファイルを MinIO + DB に登録する */
     async uploadFsFileToMinio(userId: string, username: string, relPath: string): Promise<void> {
-        const absPath = path.join(SSH_BASE, username, relPath);
+        const home = await this.getUserHomePath(username);
+        const absPath = path.join(home, relPath);
         try {
             if (!fs.existsSync(absPath)) return;
             const stat = fs.statSync(absPath);
@@ -185,6 +198,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     }
 
     async syncUserMinioToFs(userId: string, username: string): Promise<void> {
+        const home = await this.getUserHomePath(username);
         // ディレクトリを先に作成
         const dirs = await this.prisma.file.findMany({
             where: { owner_id: userId, mime_type: 'directory' },
@@ -192,7 +206,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
         for (const dir of dirs) {
             try {
                 const relPath = await this.buildPathFromParent(dir.name, dir.parent_id);
-                const absPath = path.join(SSH_BASE, username, relPath);
+                const absPath = path.join(home, relPath);
                 if (!fs.existsSync(absPath)) {
                     this.markSyncing(absPath);
                     fs.mkdirSync(absPath, { recursive: true });
@@ -215,7 +229,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
         for (const file of files) {
             try {
                 const relPath = await this.buildPathFromParent(file.name, file.parent_id);
-                const absPath = path.join(SSH_BASE, username, relPath);
+                const absPath = path.join(home, relPath);
 
                 if (fs.existsSync(absPath)) continue; // 既存ファイルはスキップ
 
@@ -322,7 +336,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
 
     /** FS→MinIO アップロードの共通処理 (chokidar & FileBrowserService から使用) */
     private async internalFsFileToMinio(userId: string, username: string, relPath: string): Promise<void> {
-        const absPath = path.join(SSH_BASE, username, relPath);
+        const home = await this.getUserHomePath(username);
+        const absPath = path.join(home, relPath);
         try {
             if (!fs.existsSync(absPath)) return;
             const stat = fs.statSync(absPath);
@@ -402,15 +417,25 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * 絶対パスからユーザー名・相対パス・userId を取り出す。
-     * /home/pi/hdd/ssh/{username}/{relPath}
+     * /home/pi/hdd/ssh/{username}/{relPath} または /home/pi/hdd/ssh/users/{username}/{relPath}
      */
     private async parseFsPath(absPath: string): Promise<{ userId: string; username: string; relPath: string } | null> {
         const rel = path.relative(SSH_BASE, absPath);
         const parts = rel.split(path.sep);
         if (parts.length < 2) return null;
 
-        const username = parts[0];
-        const relPath = parts.slice(1).join('/');
+        let username: string;
+        let relPath: string;
+
+        if (parts[0] === 'users') {
+            if (parts.length < 3) return null;
+            username = parts[1];
+            relPath = parts.slice(2).join('/');
+        } else {
+            username = parts[0];
+            relPath = parts.slice(1).join('/');
+        }
+
         if (!relPath) return null;
 
         // 隠しファイルをスキップ
