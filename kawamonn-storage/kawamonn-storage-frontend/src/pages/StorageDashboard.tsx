@@ -101,9 +101,10 @@ function FolderCard({ file, onNavigate, onDelete }: FileCardProps) {
 // -----------------------------------------------
 interface FileCardPropsExt extends Omit<FileCardProps, 'onNavigate'> {
     onEdit?: (file: FileItem) => void;
+    onPreview?: (file: FileItem) => void;
 }
 
-function FileCard({ file, onDownload, onDelete, onEdit }: FileCardPropsExt) {
+function FileCard({ file, onDownload, onDelete, onEdit, onPreview }: FileCardPropsExt) {
     const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
     useEffect(() => {
@@ -166,8 +167,10 @@ function FileCard({ file, onDownload, onDelete, onEdit }: FileCardPropsExt) {
                 style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
                 onClick={() => {
                     const isEditable = file.mime_type.startsWith('text/') || ['application/json', 'application/javascript'].includes(file.mime_type) || file.name.match(/\.(md|ts|py|sh|env|cfg|conf|yaml|yml)$/);
+                    const isPreviewable = file.mime_type.startsWith('image/') || file.mime_type === 'application/pdf';
                     if (isEditable && onEdit) onEdit(file);
-                    else if (!isEditable) onDownload(file);
+                    else if (isPreviewable && onPreview) onPreview(file);
+                    else onDownload(file);
                 }}
             >
                 {/* Preview area */}
@@ -251,6 +254,16 @@ export default function StorageDashboard() {
     const [editorFile, setEditorFile] = useState<FileItem | null>(null);
     const [editorLoading, setEditorLoading] = useState(false);
     const [editorSaving, setEditorSaving] = useState(false);
+
+    // Preview state
+    const [previewOpened, { open: openPreview, close: closePreview }] = useDisclosure(false);
+    const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+    const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [pdfPageNum, setPdfPageNum] = useState(1);
+    const [pdfTotalPages, setPdfTotalPages] = useState(1);
+    const [pdfDocRef, setPdfDocRef] = useState<any>(null);
+    const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const navigate = useNavigate();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -449,11 +462,73 @@ export default function StorageDashboard() {
     const handleDownload = async (file: FileItem) => {
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.get(`/api/v1/files/${file.id}/download`, {
-                headers: { Authorization: `Bearer ${token}` }
+            const res = await axios.get(`/api/v1/files/${file.id}/stream`, {
+                headers: { Authorization: `Bearer ${token}` },
+                responseType: 'arraybuffer',
             });
-            window.open(res.data.url, '_blank');
+            const blob = new Blob([res.data], { type: file.mime_type || 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch { /* silent */ }
+    };
+
+    const renderPdfPage = async (doc: any, pageNum: number) => {
+        if (!pdfCanvasRef.current) return;
+        const page = await doc.getPage(pageNum);
+        const vp0 = page.getViewport({ scale: 1 });
+        const scale = Math.min(800 / vp0.width, 1000 / vp0.height, 1.5);
+        const vp = page.getViewport({ scale });
+        const canvas = pdfCanvasRef.current;
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise;
+    };
+
+    const handlePreview = async (file: FileItem) => {
+        setPreviewFile(file);
+        setPreviewBlobUrl(null);
+        setPdfDocRef(null);
+        setPdfPageNum(1);
+        setPdfTotalPages(1);
+        setPreviewLoading(true);
+        openPreview();
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(`/api/v1/files/${file.id}/stream`, {
+                headers: { Authorization: `Bearer ${token}` },
+                responseType: 'arraybuffer',
+            });
+            if (file.mime_type.startsWith('image/')) {
+                const blob = new Blob([res.data], { type: file.mime_type });
+                setPreviewBlobUrl(URL.createObjectURL(blob));
+            } else if (file.mime_type === 'application/pdf') {
+                const pdf = await pdfjsLib.getDocument({ data: res.data }).promise;
+                setPdfDocRef(pdf);
+                setPdfTotalPages(pdf.numPages);
+                // Render first page after state is updated via effect
+                setTimeout(async () => {
+                    if (pdfCanvasRef.current) await renderPdfPage(pdf, 1);
+                }, 50);
+            }
+        } catch (e) {
+            console.error('Preview failed:', e);
+            alert('プレビューの読み込みに失敗しました');
+            closePreview();
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handlePdfPageChange = async (newPage: number) => {
+        if (!pdfDocRef || newPage < 1 || newPage > pdfTotalPages) return;
+        setPdfPageNum(newPage);
+        await renderPdfPage(pdfDocRef, newPage);
     };
 
     const handleDelete = async (file: FileItem) => {
@@ -676,6 +751,7 @@ export default function StorageDashboard() {
                                                     onDownload={handleDownload}
                                                     onDelete={handleDelete}
                                                     onEdit={handleEditFile}
+                                                    onPreview={handlePreview}
                                                 />
                                             ))}
                                         </Grid>
@@ -775,6 +851,75 @@ export default function StorageDashboard() {
                                     </Group>
                                 </Stack>
                             )}
+                        </Modal>
+
+                        {/* Image / PDF Preview Modal */}
+                        <Modal
+                            opened={previewOpened}
+                            onClose={() => {
+                                closePreview();
+                                if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                                setPreviewBlobUrl(null);
+                                setPdfDocRef(null);
+                            }}
+                            title={previewFile?.name}
+                            size="xl"
+                            fullScreen={window.innerWidth < 768}
+                            styles={{
+                                title: { fontWeight: 600 },
+                                body: { padding: '12px' },
+                            }}
+                        >
+                            {previewLoading ? (
+                                <Center h={300}><Progress value={100} animated style={{ width: '80%' }} /></Center>
+                            ) : previewFile?.mime_type.startsWith('image/') ? (
+                                <Stack align="center" gap="md">
+                                    <img
+                                        src={previewBlobUrl ?? ''}
+                                        alt={previewFile?.name}
+                                        style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', borderRadius: 8 }}
+                                    />
+                                    <Button
+                                        leftSection={<IconDownload size={16} />}
+                                        onClick={() => previewFile && handleDownload(previewFile)}
+                                    >
+                                        ダウンロード
+                                    </Button>
+                                </Stack>
+                            ) : previewFile?.mime_type === 'application/pdf' ? (
+                                <Stack align="center" gap="md">
+                                    <canvas
+                                        ref={pdfCanvasRef}
+                                        style={{ maxWidth: '100%', border: '1px solid #dee2e6', borderRadius: 4 }}
+                                    />
+                                    <Group gap="sm">
+                                        <Button
+                                            variant="default"
+                                            size="sm"
+                                            disabled={pdfPageNum <= 1}
+                                            onClick={() => handlePdfPageChange(pdfPageNum - 1)}
+                                        >
+                                            ◀ 前のページ
+                                        </Button>
+                                        <Text size="sm">{pdfPageNum} / {pdfTotalPages}</Text>
+                                        <Button
+                                            variant="default"
+                                            size="sm"
+                                            disabled={pdfPageNum >= pdfTotalPages}
+                                            onClick={() => handlePdfPageChange(pdfPageNum + 1)}
+                                        >
+                                            次のページ ▶
+                                        </Button>
+                                        <Button
+                                            leftSection={<IconDownload size={16} />}
+                                            size="sm"
+                                            onClick={() => previewFile && handleDownload(previewFile)}
+                                        >
+                                            ダウンロード
+                                        </Button>
+                                    </Group>
+                                </Stack>
+                            ) : null}
                         </Modal>
                     </Container>
                 </AppShell.Main>
