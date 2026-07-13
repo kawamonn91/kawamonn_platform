@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
     AppShell, Group, Title, Button, Container, Text, Card, Grid,
-    ActionIcon, TextInput, Breadcrumbs, Anchor, Center, Textarea,
+    ActionIcon, TextInput, Breadcrumbs, Anchor, Center,
     Stack, Burger, Drawer, Divider, Progress, AspectRatio, Menu, Modal
 } from '@mantine/core';
 import {
@@ -268,6 +268,7 @@ export default function StorageDashboard() {
     const navigate = useNavigate();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const folderInputRef = useRef<HTMLInputElement>(null);
+    const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
     const { logout } = useAuth();
 
     useEffect(() => { fetchFiles(); }, [currentFolderId]);
@@ -365,6 +366,36 @@ export default function StorageDashboard() {
             setEditorSaving(false);
         }
     };
+
+    // エディタのキーボードハンドラー（nano風）
+    const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        // Tab キー: フォーカス移動ではなく4スペース挿入
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const ta = editorTextareaRef.current;
+            if (!ta) return;
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const spaces = '    '; // 4スペース
+            setEditorContent(prev => prev.substring(0, start) + spaces + prev.substring(end));
+            requestAnimationFrame(() => {
+                ta.selectionStart = ta.selectionEnd = start + spaces.length;
+            });
+            return;
+        }
+        // Ctrl+S: 保存
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            handleSaveFile();
+            return;
+        }
+        // Ctrl+X: 閉じる
+        if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+            e.preventDefault();
+            closeEditor();
+            return;
+        }
+    }, [editorContent, closeEditor]);
 
     const uploadSingleFile = async (file: File, parentId: string | null) => {
         const token = localStorage.getItem('token');
@@ -822,6 +853,7 @@ export default function StorageDashboard() {
                             title={editorFile?.name}
                             size="lg"
                             fullScreen={window.innerWidth < 768}
+                            closeButtonProps={{ tabIndex: -1 }}
                             styles={{
                                 title: { fontWeight: 600 },
                                 content: { background: '#161b22', color: '#e6edf3' },
@@ -831,23 +863,71 @@ export default function StorageDashboard() {
                             {editorLoading ? (
                                 <Center h={300}><Progress value={100} animated style={{ width: '80%' }} /></Center>
                             ) : (
-                                <Stack>
-                                    <Textarea
+                                <Stack gap={0}>
+                                    <textarea
+                                        ref={editorTextareaRef}
                                         value={editorContent}
                                         onChange={(e) => setEditorContent(e.currentTarget.value)}
-                                        styles={{
-                                            input: {
-                                                fontFamily: 'monospace',
-                                                height: '60vh',
-                                                background: '#0d1117',
-                                                color: '#e6edf3',
-                                                border: '1px solid #30363d'
-                                            }
+                                        onKeyDown={handleEditorKeyDown}
+                                        style={{
+                                            fontFamily: 'monospace',
+                                            height: '60vh',
+                                            width: '100%',
+                                            background: '#0d1117',
+                                            color: '#e6edf3',
+                                            border: '1px solid #30363d',
+                                            borderRadius: 4,
+                                            padding: '8px 10px',
+                                            fontSize: 13,
+                                            lineHeight: 1.6,
+                                            resize: 'vertical',
+                                            outline: 'none',
+                                            boxSizing: 'border-box',
+                                            tabSize: 4,
                                         }}
+                                        spellCheck={false}
+                                        autoComplete="off"
+                                        autoCorrect="off"
                                     />
+                                    {/* nano風ショートカットバー */}
+                                    <div style={{
+                                        background: '#0d1117',
+                                        borderTop: '1px solid #30363d',
+                                        padding: '5px 10px',
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '4px 14px',
+                                        alignItems: 'center',
+                                        marginBottom: 8,
+                                    }}>
+                                        {[
+                                            { key: '^S', label: '保存 (Ctrl+S)' },
+                                            { key: '^X', label: '閉じる (Ctrl+X)' },
+                                            { key: 'Tab', label: 'インデント (4sp)' },
+                                        ].map(({ key, label }) => (
+                                            <Group key={key} gap={4} wrap="nowrap">
+                                                <Text
+                                                    size="xs"
+                                                    style={{
+                                                        background: '#30363d',
+                                                        color: '#e6edf3',
+                                                        fontFamily: 'monospace',
+                                                        padding: '1px 5px',
+                                                        borderRadius: 3,
+                                                        fontWeight: 600,
+                                                        fontSize: 11,
+                                                        whiteSpace: 'nowrap',
+                                                    }}
+                                                >
+                                                    {key}
+                                                </Text>
+                                                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap', fontSize: 11 }}>{label}</Text>
+                                            </Group>
+                                        ))}
+                                    </div>
                                     <Group justify="flex-end">
-                                        <Button variant="default" onClick={closeEditor}>キャンセル</Button>
-                                        <Button color="blue" onClick={handleSaveFile} loading={editorSaving}>保存</Button>
+                                        <Button variant="default" onClick={closeEditor} tabIndex={-1}>キャンセル</Button>
+                                        <Button color="blue" onClick={handleSaveFile} loading={editorSaving} tabIndex={-1}>保存</Button>
                                     </Group>
                                 </Stack>
                             )}
