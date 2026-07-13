@@ -88,6 +88,7 @@ function FileBrowser() {
     const [newFileName, setNewFileName] = useState('');
 
     const uploadRef = useRef<HTMLInputElement>(null);
+    const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
 
     const token = localStorage.getItem('token');
     const headers = { Authorization: `Bearer ${token}` };
@@ -254,6 +255,38 @@ function FileBrowser() {
             setError(e.response?.data?.message || '保存に失敗しました');
         } finally {
             setEditorSaving(false);
+        }
+    };
+
+    // エディタのキーボードハンドラー（nano風）
+    const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        // Tab キー: フォーカス移動ではなくスペース挿入
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const ta = editorTextareaRef.current;
+            if (!ta) return;
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            const spaces = '    '; // 4スペース
+            const newContent = editorContent.substring(0, start) + spaces + editorContent.substring(end);
+            setEditorContent(newContent);
+            // カーソル位置をスペース挿入後に移動
+            requestAnimationFrame(() => {
+                ta.selectionStart = ta.selectionEnd = start + spaces.length;
+            });
+            return;
+        }
+        // Ctrl+S: 保存
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            handleEditorSave();
+            return;
+        }
+        // Ctrl+X: 閉じる
+        if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+            e.preventDefault();
+            setEditorModal(false);
+            return;
         }
     };
 
@@ -536,62 +569,103 @@ function FileBrowser() {
                 </Stack>
             </Modal>
 
-            {/* テキストエディタモーダル */}
+            {/* テキストエディタモーダル (nano風) */}
             <Modal
                 opened={editorModal}
                 onClose={() => setEditorModal(false)}
                 title={
                     <Group gap="xs">
-                        <IconFile size={14} color="#58a6ff" />
+                        <IconFileText size={14} color="#58a6ff" />
                         <Text size="sm" c="white" style={{ fontFamily: 'monospace' }}>
-                            {editorPath.split('/').pop()}
+                            GNU nano — {editorPath.split('/').pop()}
                         </Text>
                         {editorIsNew && <Badge size="xs" color="teal">新規</Badge>}
                     </Group>
                 }
                 size="xl"
+                closeButtonProps={{ tabIndex: -1 }}
                 styles={{
                     content: { background: '#0d1117', border: '1px solid #30363d' },
                     header: { background: '#161b22', borderBottom: '1px solid #30363d' },
                 }}
             >
-                <Stack gap="sm">
+                <Stack gap={0}>
                     {editorLoading ? (
                         <Stack align="center" py="xl">
                             <Loader size="sm" color="blue" />
                             <Text size="xs" c="dimmed">読み込んでいます...</Text>
                         </Stack>
                     ) : (
-                        <Textarea
+                        <textarea
+                            ref={editorTextareaRef}
                             value={editorContent}
                             onChange={e => setEditorContent(e.target.value)}
-                            minRows={20}
-                            maxRows={30}
-                            autosize
-                            styles={{
-                                input: {
-                                    background: '#010409',
-                                    borderColor: '#30363d',
-                                    color: '#e6edf3',
-                                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                                    fontSize: 13,
-                                    lineHeight: 1.6,
-                                    resize: 'vertical',
-                                }
+                            onKeyDown={handleEditorKeyDown}
+                            rows={22}
+                            style={{
+                                width: '100%',
+                                background: '#010409',
+                                border: '1px solid #30363d',
+                                borderRadius: 4,
+                                color: '#e6edf3',
+                                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+                                fontSize: 13,
+                                lineHeight: 1.6,
+                                resize: 'vertical',
+                                padding: '8px 10px',
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                                tabSize: 4,
                             }}
                             placeholder="ファイルの内容を入力..."
+                            spellCheck={false}
+                            autoComplete="off"
+                            autoCorrect="off"
                         />
                     )}
-                    <Group justify="space-between">
-                        <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
-                            {editorPath}
-                        </Text>
-                        <Group gap="xs">
+
+                    {/* nano風ショートカットバー */}
+                    <div style={{
+                        background: '#161b22',
+                        borderTop: '1px solid #30363d',
+                        padding: '6px 10px',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '4px 16px',
+                        marginTop: 6,
+                        borderRadius: '0 0 4px 4px',
+                    }}>
+                        {[
+                            { key: '^O', label: '保存 (Ctrl+S)' },
+                            { key: '^X', label: '閉じる (Ctrl+X)' },
+                            { key: 'Tab', label: 'インデント (4sp)' },
+                        ].map(({ key, label }) => (
+                            <Group key={key} gap={4} wrap="nowrap">
+                                <Text
+                                    size="xs"
+                                    style={{
+                                        background: '#30363d',
+                                        color: '#e6edf3',
+                                        fontFamily: 'monospace',
+                                        padding: '1px 5px',
+                                        borderRadius: 3,
+                                        fontWeight: 600,
+                                        fontSize: 11,
+                                        whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    {key}
+                                </Text>
+                                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{label}</Text>
+                            </Group>
+                        ))}
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                             <Button
                                 variant="subtle"
                                 color="gray"
                                 size="xs"
                                 onClick={() => setEditorModal(false)}
+                                tabIndex={-1}
                             >
                                 キャンセル
                             </Button>
@@ -602,11 +676,16 @@ function FileBrowser() {
                                 onClick={handleEditorSave}
                                 loading={editorSaving}
                                 disabled={editorLoading}
+                                tabIndex={-1}
                             >
                                 保存
                             </Button>
-                        </Group>
-                    </Group>
+                        </div>
+                    </div>
+
+                    <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', marginTop: 4 }}>
+                        {editorPath}
+                    </Text>
                 </Stack>
             </Modal>
         </Stack>

@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
+    vim \
+    nano \
     build-essential \
     openjdk-21-jdk \
     gcc \
