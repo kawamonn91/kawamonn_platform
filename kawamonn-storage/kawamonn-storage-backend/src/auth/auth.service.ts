@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, ConflictException, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, ConflictException, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
@@ -9,10 +9,12 @@ import * as argon2 from 'argon2';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
     private transporter: nodemailer.Transporter;
+    private readonly logger = new Logger(AuthService.name);
 
     constructor(
         private usersService: UsersService,
@@ -99,11 +101,8 @@ export class AuthService {
 
         const account_name = (registerDto.display_name || '').trim() || registerDto.email.split('@')[0];
 
-        const existingAccount = await this.usersService.findByAccountName(account_name);
-        if (existingAccount) {
-            throw new ConflictException('Account name already mapped to another user.');
-        }
-
+        // Hash password BEFORE the transaction (argon2 is CPU-intensive ~200ms)
+        // to minimize time spent holding the SERIALIZABLE lock.
         const hashedPassword = await argon2.hash(registerDto.password);
 
         // Calculate expiry_at for @u-aizu.ac.jp accounts (4 years)
@@ -114,24 +113,80 @@ export class AuthService {
             expiryAt.setFullYear(expiryAt.getFullYear() + 4);
         }
 
-        // Allocate fs_project_id for ext4 project quota
-        // Migrated from: Flask register app (project_id = 10000 + user_id)
-        const maxProjectId = await this.prisma.user.aggregate({
-            _max: { fs_project_id: true },
-        });
-        const fsProjectId = (maxProjectId._max.fs_project_id ?? 9999) + 1;
+        // === SERIALIZABLE Transaction ===
+        // All DB reads and writes are atomic to prevent race conditions on:
+        //   - fs_project_id (MAX+1 pattern)
+        //   - account_name uniqueness
+        //   - email uniqueness
+        let newUser: any;
+        try {
+            newUser = await this.prisma.$transaction(async (tx) => {
+                // Check email uniqueness inside transaction
+                const existingEmail = await tx.user.findUnique({
+                    where: { email: registerDto.email },
+                });
+                if (existingEmail) {
+                    throw new ConflictException('Email already registered.');
+                }
 
-        const newUser = await this.usersService.createUser({
-            email: registerDto.email,
-            account_name,
-            password_hash: hashedPassword,
-            role: 'user',
-            expiry_at: expiryAt,
-            fs_project_id: fsProjectId,
-            password_last_set_at: new Date(),
-        });
+                // Check account_name uniqueness inside transaction
+                const existingAccount = await tx.user.findUnique({
+                    where: { account_name },
+                });
+                if (existingAccount) {
+                    throw new ConflictException('Account name already mapped to another user.');
+                }
 
-        // Sync to host for SSH access
+                // Allocate fs_project_id atomically within the transaction
+                // Migrated from: Flask register app (project_id = 10000 + user_id)
+                const maxProjectId = await tx.user.aggregate({
+                    _max: { fs_project_id: true },
+                });
+                const fsProjectId = (maxProjectId._max.fs_project_id ?? 9999) + 1;
+
+                // Create user atomically
+                return tx.user.create({
+                    data: {
+                        email: registerDto.email,
+                        account_name,
+                        password_hash: hashedPassword,
+                        role: 'user',
+                        expiry_at: expiryAt,
+                        fs_project_id: fsProjectId,
+                        password_last_set_at: new Date(),
+                    },
+                });
+            }, {
+                isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+                timeout: 10000, // 10s timeout for the transaction
+            });
+        } catch (error) {
+            // Re-throw ConflictException as-is (from our own checks)
+            if (error instanceof ConflictException) {
+                throw error;
+            }
+            // Handle Prisma unique constraint violation (P2002)
+            // This catches race conditions that slip past our checks
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+                const target = (error.meta?.target as string[]) || [];
+                if (target.includes('email')) {
+                    throw new ConflictException('Email already registered.');
+                }
+                if (target.includes('account_name')) {
+                    throw new ConflictException('Account name already in use.');
+                }
+                if (target.includes('fs_project_id')) {
+                    // fs_project_id collision — retry would succeed but is complex; ask user to retry
+                    throw new ConflictException('Registration conflict. Please try again.');
+                }
+                throw new ConflictException('Registration conflict. Please try again.');
+            }
+            // Any other unexpected error
+            this.logger.error('Registration transaction failed', error);
+            throw error;
+        }
+
+        // Sync to host for SSH access (AFTER successful DB transaction)
         try {
             const { execFileSync } = require('child_process');
             // Create host user with gateway shell (use argument array to prevent command injection)
@@ -148,11 +203,21 @@ export class AuthService {
             execFileSync('sudo', [
                 '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/create_user_dir.sh',
                 account_name,
-                String(fsProjectId),
+                String(newUser.fs_project_id),
                 String(newUser.quota_bytes),
             ]);
         } catch (e) {
-            console.warn('Host user creation during registration failed (non-critical):', e.message);
+            // OS-level user creation failed — roll back the DB user to prevent orphaned records
+            this.logger.error(`OS user creation failed for ${account_name}, rolling back DB user`, e);
+            try {
+                await this.prisma.user.delete({ where: { id: newUser.id } });
+            } catch (rollbackError) {
+                this.logger.error(`DB rollback also failed for user ${newUser.id}`, rollbackError);
+            }
+            throw new HttpException(
+                'Registration failed during system setup. Please try again.',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
         }
 
         return { user_id: newUser.id, status: 'Registered successfully. Proceed to login.' };
