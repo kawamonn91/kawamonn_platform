@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { AxiosRequestConfig } from 'axios';
+import type { AxiosRequestConfig, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import api from './client';
 
 /**
@@ -9,10 +9,16 @@ import api from './client';
  * drive the response interceptor's 401 handling) — exercising the real
  * interceptor logic registered on `api`, not a reimplementation of it.
  */
-function make401Error() {
-    const error: any = new Error('Unauthorized');
+function make401Error(): AxiosError {
+    const error = new Error('Unauthorized') as AxiosError;
     error.isAxiosError = true;
-    error.response = { status: 401, data: {}, statusText: 'Unauthorized', headers: {}, config: {} };
+    error.response = {
+        status: 401,
+        data: {},
+        statusText: 'Unauthorized',
+        headers: {},
+        config: { headers: {} } as InternalAxiosRequestConfig,
+    };
     return error;
 }
 
@@ -22,6 +28,10 @@ function stubLocation() {
         writable: true,
         configurable: true,
     });
+}
+
+function authHeader(config: AxiosRequestConfig | undefined): string | undefined {
+    return (config?.headers as Record<string, string> | undefined)?.Authorization;
 }
 
 describe('api client', () => {
@@ -40,7 +50,7 @@ describe('api client', () => {
 
             await api.get('/whatever');
 
-            expect((captured?.headers as any)?.Authorization).toBe('Bearer abc123');
+            expect(authHeader(captured)).toBe('Bearer abc123');
         });
 
         it('omits the Authorization header when no token is present', async () => {
@@ -52,7 +62,7 @@ describe('api client', () => {
 
             await api.get('/whatever');
 
-            expect((captured?.headers as any)?.Authorization).toBeUndefined();
+            expect(authHeader(captured)).toBeUndefined();
         });
     });
 

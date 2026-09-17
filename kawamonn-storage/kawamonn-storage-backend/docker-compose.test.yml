@@ -18,7 +18,10 @@ services:
       - "6380:6379" # different from production's 6379 on purpose
 
   test-minio:
-    image: minio/minio:latest
+    # MinIO no longer serves fresh pulls of this image from Docker Hub
+    # (confirmed: fails with "pull access denied" on a cold GitHub Actions
+    # runner). quay.io/minio/minio is their own current registry.
+    image: quay.io/minio/minio:latest
     container_name: kawamonn_test_minio
     environment:
       MINIO_ROOT_USER: test-access-key
