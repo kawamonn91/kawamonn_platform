@@ -37,7 +37,7 @@ export default function ResetPassword() {
         try {
             setStatus('loading');
             setMessage('');
-            await axios.post('/api/v1/auth/h1_JMT48RY-eJkeeVQwib5gvOwRFWNYswkOzBofQ', { token, new_password: password });
+            await axios.post('/api/v1/auth/reset-password', { token, new_password: password });
             setStatus('success');
             setMessage('Your password has been reset successfully.');
         } catch (err: any) {

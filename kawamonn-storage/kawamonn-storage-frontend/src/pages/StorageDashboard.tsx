@@ -5,7 +5,7 @@ import {
     Stack, Burger, Drawer, Divider, Progress, AspectRatio, Menu, Modal
 } from '@mantine/core';
 import {
-    IconUpload, IconFolder, IconFolderPlus, IconFileText, IconTerminal2, IconEdit,
+    IconUpload, IconFolder, IconFolderPlus, IconFileText, IconTerminal2,
     IconPlus, IconDownload, IconTrash, IconChevronRight, IconFile, IconFileZip, IconFileCode, IconPhoto, IconSettings, IconDotsVertical, IconFilePlus
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';

@@ -44,9 +44,17 @@ export class FileBrowserService {
     /**
      * パストラバーサル攻撃を防止しつつ、絶対パスを解決する。
      * ユーザーのルートディレクトリ外へのアクセスは ForbiddenException を投げる。
+     *
+     * textual な path.resolve だけでは、ユーザーが自分のディレクトリ内に作成した
+     * シンボリックリンク（例: /etc への ln -s）をそのまま辿って外部を読み書きできてしまう
+     * ため、実在するパスは fs.realpathSync でリンク先まで解決してから境界チェックする。
+     * 対象がまだ存在しない場合（新規作成時）は、実在する親ディレクトリを realpath 化し、
+     * それがルート配下にあることを確認したうえで残りのパスを連結する。
      */
     private async resolveSafe(username: string, relPath: string): Promise<string> {
         const root = await this.userRoot(username);
+        const realRoot = fs.realpathSync(root);
+
         // relPath が空または '/' の場合はルートを返す
         const normalized = relPath ? relPath.replace(/\\/g, '/') : '/';
         const absolute = path.resolve(root, normalized.startsWith('/') ? normalized.slice(1) : normalized);
@@ -54,7 +62,27 @@ export class FileBrowserService {
         if (!absolute.startsWith(root + path.sep) && absolute !== root) {
             throw new ForbiddenException('Access outside home directory is not allowed');
         }
+
+        const realContainingPath = this.realpathOfNearestExistingAncestor(absolute);
+        if (!realContainingPath.startsWith(realRoot + path.sep) && realContainingPath !== realRoot) {
+            throw new ForbiddenException('Access outside home directory is not allowed');
+        }
+
         return absolute;
+    }
+
+    /**
+     * absolute パス自体、または最も近い実在する親ディレクトリを realpath 化して返す。
+     * シンボリックリンクを辿った実体が userRoot の外にあれば呼び出し元で拒否される。
+     */
+    private realpathOfNearestExistingAncestor(absolute: string): string {
+        let current = absolute;
+        while (!fs.existsSync(current)) {
+            const parent = path.dirname(current);
+            if (parent === current) break; // filesystem root, safety valve
+            current = parent;
+        }
+        return fs.realpathSync(current);
     }
 
     /** ディレクトリ内容を一覧取得 */

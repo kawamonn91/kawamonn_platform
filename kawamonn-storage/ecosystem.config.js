@@ -3,10 +3,12 @@ module.exports = {
         {
             name: 'kawamonn-backend',
             script: 'npm',
-            args: 'run start:dev',
+            // Runs the compiled dist/ build instead of `nest start --watch`.
+            // Requires `npm run build` in kawamonn-storage-backend before (re)starting.
+            args: 'run start:prod',
             cwd: '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend',
             env: {
-                NODE_ENV: 'development'
+                NODE_ENV: 'production'
             },
             // --- 再発防止設定 ---
             // 連続クラッシュ時の最大再起動回数 (上限を超えたら停止)
@@ -24,10 +26,13 @@ module.exports = {
         {
             name: 'kawamonn-frontend',
             script: 'npm',
-            args: 'run dev -- --host --port 8080',
+            // Serves the pre-built dist/ bundle instead of the Vite dev server.
+            // Requires `npm run build` in kawamonn-storage-frontend before (re)starting.
+            // Same host/port as before, so no cloudflared config change is needed.
+            args: 'run preview -- --host --port 8080',
             cwd: '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-frontend',
             env: {
-                NODE_ENV: 'development'
+                NODE_ENV: 'production'
             },
             // --- 再発防止設定 ---
             max_restarts: 5,

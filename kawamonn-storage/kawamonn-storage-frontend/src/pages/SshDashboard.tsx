@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
     AppShell, Group, Title, Button, Container, Text, Badge,
     Card, Stack, Loader, Alert, Grid, Progress, Tooltip, ActionIcon,
-    ScrollArea, TextInput, Modal, Menu, Textarea,
+    ScrollArea, TextInput, Modal, Menu,
 } from '@mantine/core';
 import {
     IconTerminal2, IconPlayerPlay, IconPlayerStop, IconRefresh,

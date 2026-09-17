@@ -3,6 +3,9 @@ import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { EmailDto } from './dto/email.dto';
+import { AdminVerifyDto } from './dto/admin-verify.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
@@ -27,7 +30,7 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     @Post('send-otp')
     @Throttle({ auth: { limit: 3, ttl: 60000 } })
-    sendOtp(@Body() body: { email: string }) {
+    sendOtp(@Body() body: EmailDto) {
         return this.authService.sendOtp(body.email);
     }
 
@@ -40,21 +43,21 @@ export class AuthController {
 
     @HttpCode(HttpStatus.OK)
     @Post('admin/verify')
-    adminVerify(@Body() body: { account_name: string, otp_code: string }) {
+    adminVerify(@Body() body: AdminVerifyDto) {
         return this.authService.adminVerify(body.account_name, body.otp_code);
     }
 
     @HttpCode(HttpStatus.OK)
     @Post('forgot-password')
     @Throttle({ auth: { limit: 3, ttl: 60000 } })
-    forgotPassword(@Body() body: { email: string }, @Req() req: Request) {
+    forgotPassword(@Body() body: EmailDto, @Req() req: Request) {
         const ip = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
         return this.authService.forgotPassword(body.email, ip);
     }
 
     @HttpCode(HttpStatus.OK)
-    @Post('h1_JMT48RY-eJkeeVQwib5gvOwRFWNYswkOzBofQ')
-    resetPassword(@Body() body: { token: string, new_password: string }, @Req() req: Request) {
+    @Post('reset-password')
+    resetPassword(@Body() body: ResetPasswordDto, @Req() req: Request) {
         const ip = req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
         return this.authService.resetPassword(body.token, body.new_password, ip);
     }

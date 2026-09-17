@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 import * as nodemailer from 'nodemailer';
 
 /**
@@ -15,7 +16,7 @@ export class SchedulerService {
     private readonly logger = new Logger(SchedulerService.name);
     private transporter: nodemailer.Transporter;
 
-    constructor(private prisma: PrismaService) {
+    constructor(private prisma: PrismaService, private usersService: UsersService) {
         this.transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.gmail.com',
             port: parseInt(process.env.SMTP_PORT || '465', 10),
@@ -167,13 +168,8 @@ export class SchedulerService {
 
         for (const user of expiredUsers) {
             try {
-                // Archive user data via shell script (same as Flask version)
-                const { execFileSync } = require('child_process');
-                execFileSync('sudo', [
-                    '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/delete_user.sh',
-                    user.account_name,
-                    'archive',
-                ]);
+                // Stop/remove SSH containers, revoke OS access, archive + delete storage
+                await this.usersService.deprovisionUser(user.account_name);
 
                 // Update user status to deleted
                 await this.prisma.user.update({

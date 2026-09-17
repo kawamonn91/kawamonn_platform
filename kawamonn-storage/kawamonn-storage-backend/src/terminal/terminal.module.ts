@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TerminalGateway } from './terminal.gateway';
 import { SshModule } from '../ssh/ssh.module';
+import { getJwtSecret } from '../common/jwt-secret';
 
 @Module({
     imports: [
         SshModule,
         JwtModule.register({
-            secret: process.env.JWT_SECRET || 'kawamonn-super-secret-jwt-key',
+            secret: getJwtSecret(),
             signOptions: { expiresIn: '7d' },
         }),
     ],

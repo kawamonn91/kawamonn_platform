@@ -2,11 +2,14 @@ import { Controller, Post, Get, Delete, Put, UseGuards, UseInterceptors, Uploade
 import { FilesService } from './files.service';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { PrismaService } from '../prisma/prisma.service';
+import { getJwtSecret } from '../common/jwt-secret';
+import * as jwt from 'jsonwebtoken';
 
 @Controller('files')
 @UseGuards(JwtAuthGuard)
 export class FilesController {
-    constructor(private readonly filesService: FilesService) { }
+    constructor(private readonly filesService: FilesService, private readonly prisma: PrismaService) { }
 
     @Post()
     @UseInterceptors(FileInterceptor('file'))
@@ -74,12 +77,15 @@ export class FilesController {
         let userId: string;
         try {
             // Accept JWT from Authorization header OR from ?token= query param
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const jwt = require('jsonwebtoken');
             const rawToken = (req.headers?.authorization || '').replace('Bearer ', '') || queryToken;
             if (!rawToken) throw new Error('No token provided');
-            const payload: any = jwt.verify(rawToken, process.env.JWT_SECRET || 'kawamonn_secret');
-            userId = payload.sub;
+            const payload: any = jwt.verify(rawToken, getJwtSecret());
+            // Unlike JwtAuthGuard's normal path, this endpoint bypasses JwtStrategy,
+            // so it must independently confirm the user hasn't been deleted since
+            // the token was issued.
+            const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+            if (!user) throw new Error('User no longer exists');
+            userId = user.id;
         } catch {
             res.status(401).json({ message: 'Unauthorized' });
             return;

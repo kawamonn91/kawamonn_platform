@@ -90,7 +90,14 @@ export default function AdminDashboard() {
             const token = localStorage.getItem('token');
             const quotaBytes = (newUser.quota_gb * 1e9).toString();
             await axios.post('/api/v1/admin/users',
-                { ...newUser, quota: quotaBytes },
+                {
+                    email: newUser.email,
+                    account_name: newUser.account_name || undefined,
+                    // Omit password entirely when blank so the backend generates one,
+                    // instead of sending '' (which would fail minimum-length validation).
+                    password: newUser.password || undefined,
+                    quota_bytes: quotaBytes,
+                },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             setShowAddForm(false);

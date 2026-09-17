@@ -14,21 +14,13 @@ import { SshService } from '../ssh/ssh.service';
 import { Logger } from '@nestjs/common';
 import * as Docker from 'dockerode';
 import { Duplex } from 'stream';
+import { ALLOWED_ORIGINS } from '../common/allowed-origins';
 
 interface TerminalSession {
     exec: Docker.Exec;
     stream: Duplex;
     username: string;
 }
-
-const ALLOWED_ORIGINS = [
-    'https://storage.kawamonn.com',
-    'https://account.kawamonn.com',
-    'https://web.kawamonn.com',
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'http://localhost:3000',
-];
 
 @WebSocketGateway({
     namespace: '/terminal',

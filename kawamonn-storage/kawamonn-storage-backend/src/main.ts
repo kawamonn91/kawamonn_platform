@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import { ALLOWED_ORIGINS } from './common/allowed-origins';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -12,17 +13,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // Restrict CORS to known origins
-  const allowedOrigins = [
-    'https://storage.kawamonn.com',
-    'https://account.kawamonn.com',
-    'https://web.kawamonn.com',
-    'http://localhost:5173', // development
-    'http://localhost:3000', // development
-  ];
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl)
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

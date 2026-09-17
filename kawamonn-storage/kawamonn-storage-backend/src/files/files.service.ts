@@ -118,11 +118,29 @@ export class FilesService {
         return { ...folder, size: folder.size.toString() };
     }
 
+    /** フォルダ削除時に、DB カスケード削除される前の全子孫ファイル/フォルダを収集する */
+    private async collectDescendants(fileId: string): Promise<{ id: string; storage_key: string | null; size: bigint; mime_type: string }[]> {
+        const children = await this.prisma.file.findMany({ where: { parent_id: fileId } });
+        let all: { id: string; storage_key: string | null; size: bigint; mime_type: string }[] = [];
+        for (const child of children) {
+            all.push(child);
+            if (child.mime_type === 'directory') {
+                all = all.concat(await this.collectDescendants(child.id));
+            }
+        }
+        return all;
+    }
+
     async deleteFile(userId: string, fileId: string) {
         const file = await this.prisma.file.findFirst({
             where: { id: fileId, owner_id: userId }
         });
         if (!file) throw new NotFoundException('File not found');
+
+        // フォルダの場合、DB のカスケード削除で消える前に全子孫を収集しておく。
+        // これがないと子ファイルの MinIO オブジェクトが孤立し、used_bytes も減らない。
+        const descendants = file.mime_type === 'directory' ? await this.collectDescendants(fileId) : [];
+        const allDeleted = [file, ...descendants];
 
         // FS 同期用にパスを先に解決（DB 削除前に取得する必要がある）
         let fsRelPath: string | null = null;
@@ -133,10 +151,11 @@ export class FilesService {
             fsUsername = dbUser?.account_name ?? null;
         } catch (e) { /* ignore */ }
 
-        // Delete from MinIO if it has a storage key (not a directory)
-        if (file.storage_key) {
+        // Delete every descendant's MinIO object (directories have no storage_key)
+        for (const f of allDeleted) {
+            if (!f.storage_key) continue;
             try {
-                await this.minioClient.removeObject(this.bucketName, file.storage_key);
+                await this.minioClient.removeObject(this.bucketName, f.storage_key);
             } catch (e) {
                 console.error('MinIO delete failed (continuing):', e.message);
             }
@@ -145,11 +164,12 @@ export class FilesService {
         // Delete from DB (cascades to children via schema)
         await this.prisma.file.delete({ where: { id: fileId } });
 
-        // Decrement used_bytes if it was a real file
-        if (file.size > 0) {
+        // Decrement used_bytes by the total size of everything actually removed
+        const totalBytes = allDeleted.reduce((sum, f) => sum + BigInt(f.size), BigInt(0));
+        if (totalBytes > 0n) {
             await this.prisma.user.update({
                 where: { id: userId },
-                data: { used_bytes: { decrement: file.size } }
+                data: { used_bytes: { decrement: totalBytes } }
             });
         }
 

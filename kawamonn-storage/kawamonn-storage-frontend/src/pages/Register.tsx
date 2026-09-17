@@ -69,11 +69,11 @@ export default function Register() {
                         />
                         <PasswordInput
                             label="Password"
-                            placeholder="Your password"
+                            placeholder="At least 8 characters"
                             required
                             mt="md"
                             value={password}
-                            error={password && !/^[a-zA-Z0-9_.-]+$/.test(password) ? 'Password can only contain letters, numbers, and _ . -' : null}
+                            error={password && password.length < 8 ? 'Password must be at least 8 characters' : null}
                             onChange={(e) => setPassword(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}

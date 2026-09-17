@@ -1,11 +1,21 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, Request, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, UseGuards, ConflictException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { AuthService } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateQuotaDto } from './dto/update-quota.dto';
+import { BroadcastDto } from './dto/broadcast.dto';
+import * as bcrypt from 'bcrypt';
+import { generateTempPassword } from '../common/random-password';
+import { isReservedAccountName } from '../common/reserved-names';
 
 @Controller('admin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin')
 export class AdminController {
     constructor(
         private readonly adminService: AdminService,
@@ -15,45 +25,35 @@ export class AdminController {
 
     @Get('users')
     async listUsers(
-        @Request() req,
         @Query('search') search?: string,
         @Query('page') page: string = '1',
         @Query('per_page') perPage: string = '20',
     ) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
         return this.adminService.listUsers(search, parseInt(page, 10), parseInt(perPage, 10));
     }
 
     @Get('users/:id')
-    async getUserDetail(@Request() req, @Param('id') id: string) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
+    async getUserDetail(@Param('id') id: string) {
         return this.adminService.getUserDetail(id);
     }
 
     @Post('users')
-    async createUser(@Request() req, @Body() body: any) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
+    async createUser(@Body() body: CreateUserDto) {
+        const account_name = body.account_name || body.email.split('@')[0];
+        if (isReservedAccountName(account_name)) {
+            throw new ConflictException('This account name is reserved and cannot be used.');
         }
-
-        const email = body.email;
-        const account_name = body.account_name || email.split('@')[0];
-        const password = body.password || Math.random().toString(36).slice(-8);
+        const password = body.password || generateTempPassword();
 
         // Use bcrypt for manual creation to avoid argon2 issues on Pi
-        const bcrypt = require('bcrypt');
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const newUser = await this.usersService.createUser({
-            email,
+            email: body.email,
             account_name,
             password_hash: hashedPassword,
             role: body.role || 'user',
-            quota_bytes: body.quota ? BigInt(body.quota) : BigInt(21474836480), // Default 20GB
+            quota_bytes: body.quota_bytes ? BigInt(body.quota_bytes) : BigInt(21474836480), // Default 20GB
         });
 
         return {
@@ -64,51 +64,29 @@ export class AdminController {
     }
 
     @Put('users/:id')
-    async updateUser(@Request() req, @Param('id') id: string, @Body() body: { quota_bytes?: string; email?: string }) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
+    async updateUser(@Param('id') id: string, @Body() body: UpdateUserDto) {
         await this.adminService.updateUser(id, body);
         return { status: 'updated' };
     }
 
     @Delete('users/:id')
-    async deleteUser(@Request() req, @Param('id') id: string) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
+    async deleteUser(@Param('id') id: string) {
         await this.adminService.deleteUser(id);
         return { status: 'deleted' };
     }
 
     @Post('users/:id/reset-password')
-    async resetPassword(@Request() req, @Param('id') id: string) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
+    async resetPassword(@Param('id') id: string) {
         return this.adminService.resetPassword(id);
     }
 
     @Post('users/:id/quota')
-    async updateQuota(
-        @Request() req,
-        @Param('id') id: string,
-        @Body() body: { quota_gb: number },
-    ) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
+    async updateQuota(@Param('id') id: string, @Body() body: UpdateQuotaDto) {
         return this.adminService.updateQuota(id, body.quota_gb);
     }
 
     @Post('broadcast')
-    async broadcastEmail(@Request() req, @Body() body: { subject: string; message: string }) {
-        if (req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin access required');
-        }
-        if (!body.subject || !body.message) {
-            throw new ForbiddenException('Subject and message are required');
-        }
+    async broadcastEmail(@Body() body: BroadcastDto) {
         return this.adminService.broadcastEmail(body.subject, body.message);
     }
 }

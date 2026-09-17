@@ -14,6 +14,17 @@ if [ -z "$USERNAME" ] || [ -z "$ACTION" ]; then
     exit 1
 fi
 
+# Revoke OS-level access first and unconditionally, regardless of whether the
+# storage directory below still exists. Without this, a deleted/expired user
+# keeps their SSH login and group memberships indefinitely.
+if id "$USERNAME" &>/dev/null; then
+    pkill -u "$USERNAME" 2>/dev/null || true
+    userdel -r "$USERNAME" 2>/dev/null || userdel "$USERNAME" 2>/dev/null || true
+fi
+for grp in docker kawamonn-users; do
+    gpasswd -d "$USERNAME" "$grp" 2>/dev/null || true
+done
+
 if [ ! -d "$USER_DIR" ]; then
     echo "User directory not found: $USER_DIR"
     exit 0

@@ -10,6 +10,7 @@ import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { isReservedAccountName } from '../common/reserved-names';
 
 @Injectable()
 export class AuthService {
@@ -62,7 +63,6 @@ export class AuthService {
         const payload = { account_name: user.account_name, sub: user.id, role: 'user' };
         return {
             token: this.jwtService.sign(payload),
-            refresh_token: this.jwtService.sign(payload, { expiresIn: '30d' })
         };
     }
 
@@ -100,6 +100,10 @@ export class AuthService {
         }
 
         const account_name = (registerDto.display_name || '').trim() || registerDto.email.split('@')[0];
+
+        if (isReservedAccountName(account_name)) {
+            throw new ConflictException('This account name is reserved and cannot be used.');
+        }
 
         // Hash password BEFORE the transaction (argon2 is CPU-intensive ~200ms)
         // to minimize time spent holding the SERIALIZABLE lock.
@@ -192,7 +196,11 @@ export class AuthService {
             // Create host user with gateway shell (use argument array to prevent command injection)
             execFileSync('sudo', ['useradd', '-m', '-s', '/usr/local/bin/ssh-gateway.sh', account_name]);
             execFileSync('sudo', ['usermod', '-aG', 'kawamonn-users', account_name]);
-            execFileSync('sudo', ['usermod', '-aG', 'docker', account_name]);
+            // NOTE: users are intentionally NOT added to the `docker` group. Docker group
+            // membership is root-equivalent (a member can bind-mount the host filesystem),
+            // so granting it to every self-registered user would defeat all sandboxing.
+            // The app itself manages each user's SSH container via SshService/dockerode,
+            // which runs under the backend process's own privileges, not the user's OS account.
             // Set initial password via stdin (never via shell interpolation)
             execFileSync('sudo', ['chpasswd'], {
                 input: `${account_name}:${registerDto.password}\n`
@@ -257,7 +265,6 @@ export class AuthService {
         const payload = { account_name: user.account_name, sub: user.id, role: user.role };
         return {
             token: this.jwtService.sign(payload),
-            refresh_token: this.jwtService.sign(payload, { expiresIn: '30d' })
         };
     }
 

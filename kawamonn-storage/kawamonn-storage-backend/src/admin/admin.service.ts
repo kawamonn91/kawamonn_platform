@@ -1,14 +1,15 @@
 import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 import * as nodemailer from 'nodemailer';
 import * as bcrypt from 'bcrypt';
-import * as crypto from 'crypto';
+import { generateTempPassword } from '../common/random-password';
 
 @Injectable()
 export class AdminService {
     private transporter: nodemailer.Transporter;
 
-    constructor(private prisma: PrismaService) {
+    constructor(private prisma: PrismaService, private usersService: UsersService) {
         this.transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.gmail.com',
             port: parseInt(process.env.SMTP_PORT || '465', 10),
@@ -134,6 +135,13 @@ export class AdminService {
     }
 
     async deleteUser(id: string) {
+        const user = await this.prisma.user.findUnique({ where: { id } });
+        if (!user) throw new NotFoundException('User not found');
+
+        // Revoke OS-level access (SSH login, group membership, running containers)
+        // before removing the DB row, so nothing is left able to reach the box.
+        await this.usersService.deprovisionUser(user.account_name);
+
         return this.prisma.user.delete({
             where: { id },
         });
@@ -147,13 +155,7 @@ export class AdminService {
         const user = await this.prisma.user.findUnique({ where: { id } });
         if (!user) throw new NotFoundException('User not found');
 
-        // Generate 12-char random password
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-        let tempPassword = '';
-        for (let i = 0; i < 12; i++) {
-            tempPassword += chars.charAt(crypto.randomInt(chars.length));
-        }
-
+        const tempPassword = generateTempPassword();
         const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
         await this.prisma.user.update({

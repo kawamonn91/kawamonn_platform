@@ -19,7 +19,7 @@ export default function AdminLogin() {
         setError('');
         try {
             await axios.post('/api/v1/auth/admin/login', { account_name: accountName, password });
-            setSuccessMsg('Admin credentials verified. OTP sent to kawamonn91@gmail.com.');
+            setSuccessMsg('Admin credentials verified. An OTP has been sent to the registered admin email.');
             setStep(2);
         } catch (err: any) {
             setError(err.response?.data?.message || 'Admin login failed');
