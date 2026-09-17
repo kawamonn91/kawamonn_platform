@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/client';
 import { useAuth } from '../App';
 
 export default function AdminLogin() {
@@ -18,7 +18,7 @@ export default function AdminLogin() {
         e.preventDefault();
         setError('');
         try {
-            await axios.post('/api/v1/auth/admin/login', { account_name: accountName, password });
+            await api.post('/api/v1/auth/admin/login', { account_name: accountName, password });
             setSuccessMsg('Admin credentials verified. An OTP has been sent to the registered admin email.');
             setStep(2);
         } catch (err: any) {
@@ -30,7 +30,7 @@ export default function AdminLogin() {
         e.preventDefault();
         setError('');
         try {
-            const res = await axios.post('/api/v1/auth/admin/verify', {
+            const res = await api.post('/api/v1/auth/admin/verify', {
                 account_name: accountName,
                 otp_code: otpCode
             });

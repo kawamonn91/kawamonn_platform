@@ -17,8 +17,9 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import axios from 'axios';
+import api from '../api/client';
 import { useAuth } from '../App';
+import { formatBytes, fetchWithRetry, isEditable } from './sshFileHelpers';
 
 type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
 
@@ -35,31 +36,6 @@ interface FileEntry {
     size: number;
     mtime: string;
 }
-
-// ─────────────────────────────────────────────
-// ファイルサイズのフォーマット
-// ─────────────────────────────────────────────
-function formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-// 自動リトライ用ヘルパー追加部分
-const fetchWithRetry = async <T,>(fn: () => Promise<T>, retries = 3, delayMs = 1500): Promise<T> => {
-    try {
-        return await fn();
-    } catch (e: any) {
-        // 400系エラー(404など)はリトライしない
-        if (retries <= 0 || (e.response && e.response.status >= 400 && e.response.status < 500 && e.response.status !== 429)) {
-            throw e;
-        }
-        await new Promise(r => setTimeout(r, delayMs));
-        return fetchWithRetry(fn, retries - 1, delayMs * 1.5);
-    }
-};
 
 // ─────────────────────────────────────────────
 // ファイルブラウザコンポーネント
@@ -90,15 +66,11 @@ function FileBrowser() {
     const uploadRef = useRef<HTMLInputElement>(null);
     const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-    const token = localStorage.getItem('token');
-    const headers = { Authorization: `Bearer ${token}` };
-
     const fetchDir = useCallback(async (path: string) => {
         setLoading(true);
         setError('');
         try {
-            const res = await fetchWithRetry(() => axios.get('/api/v1/filebrowser/ls', {
-                headers,
+            const res = await fetchWithRetry(() => api.get('/api/v1/filebrowser/ls', {
                 params: { path },
             }));
             setEntries(res.data.entries);
@@ -108,7 +80,7 @@ function FileBrowser() {
         } finally {
             setLoading(false);
         }
-    }, [headers]);
+    }, []);
 
     useEffect(() => { fetchDir('/'); }, [fetchDir]);
 
@@ -131,8 +103,7 @@ function FileBrowser() {
 
     const handleDownload = async (entry: FileEntry) => {
         try {
-            const res = await axios.get('/api/v1/filebrowser/read', {
-                headers,
+            const res = await api.get('/api/v1/filebrowser/read', {
                 params: { path: entry.path },
                 responseType: 'blob',
             });
@@ -150,7 +121,7 @@ function FileBrowser() {
     const handleDelete = async (entry: FileEntry) => {
         if (!window.confirm(`「${entry.name}」を削除しますか？`)) return;
         try {
-            await axios.delete('/api/v1/filebrowser/delete', { headers, params: { path: entry.path } });
+            await api.delete('/api/v1/filebrowser/delete', { params: { path: entry.path } });
             fetchDir(currentPath);
         } catch (e: any) {
             setError(e.response?.data?.message || '削除に失敗しました');
@@ -163,8 +134,8 @@ function FileBrowser() {
         const formData = new FormData();
         formData.append('file', files[0]);
         try {
-            await axios.post('/api/v1/filebrowser/upload', formData, {
-                headers: { ...headers, 'Content-Type': 'multipart/form-data' },
+            await api.post('/api/v1/filebrowser/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
                 params: { path: currentPath },
             });
             fetchDir(currentPath);
@@ -178,7 +149,7 @@ function FileBrowser() {
         if (!newFolderName.trim()) return;
         const newPath = `${currentPath === '/' ? '' : currentPath}/${newFolderName.trim()}`;
         try {
-            await axios.post('/api/v1/filebrowser/mkdir', { path: newPath }, { headers });
+            await api.post('/api/v1/filebrowser/mkdir', { path: newPath });
             setNewFolderModal(false);
             setNewFolderName('');
             fetchDir(currentPath);
@@ -198,10 +169,10 @@ function FileBrowser() {
         const parentDir = renameTarget.path.split('/').slice(0, -1).join('/') || '/';
         const newPath = `${parentDir === '/' ? '' : parentDir}/${renameName.trim()}`;
         try {
-            await axios.patch('/api/v1/filebrowser/rename', {
+            await api.patch('/api/v1/filebrowser/rename', {
                 oldPath: renameTarget.path,
                 newPath,
-            }, { headers });
+            });
             setRenameModal(false);
             setRenameTarget(null);
             fetchDir(currentPath);
@@ -211,15 +182,6 @@ function FileBrowser() {
     };
 
     // テキストファイルをエディタで開く
-    const EDITABLE_EXTS = new Set(['.txt', '.md', '.sh', '.py', '.js', '.ts', '.json', '.yaml', '.yml',
-        '.toml', '.ini', '.conf', '.cfg', '.env', '.csv', '.xml', '.html', '.css', '.c', '.cpp',
-        '.java', '.go', '.rs', '.rb', '.pl', '.sql', '.tf', '']);
-
-    const isEditable = (name: string) => {
-        const ext = name.includes('.') ? '.' + name.split('.').pop()!.toLowerCase() : '';
-        return EDITABLE_EXTS.has(ext);
-    };
-
     const openEditor = async (entry: FileEntry) => {
         setEditorPath(entry.path);
         setEditorIsNew(false);
@@ -227,8 +189,7 @@ function FileBrowser() {
         setEditorModal(true);
         setEditorContent('');
         try {
-            const res = await fetchWithRetry(() => axios.get('/api/v1/filebrowser/read', {
-                headers,
+            const res = await fetchWithRetry(() => api.get('/api/v1/filebrowser/read', {
                 params: { path: entry.path },
                 responseType: 'text',
                 transformResponse: [(data) => data],  // JSON パースをバイパス
@@ -245,9 +206,8 @@ function FileBrowser() {
     const handleEditorSave = async () => {
         setEditorSaving(true);
         try {
-            await axios.put('/api/v1/filebrowser/write-text',
-                { path: editorPath, content: editorContent },
-                { headers }
+            await api.put('/api/v1/filebrowser/write-text',
+                { path: editorPath, content: editorContent }
             );
             setEditorModal(false);
             fetchDir(currentPath);
@@ -716,12 +676,9 @@ export default function SshDashboard() {
     // ----------------------------------------------
     const fetchStatus = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
             const username = localStorage.getItem('account_name');
             if (!username) return;
-            const res = await axios.get(`/api/v1/ssh/status/${username}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await api.get(`/api/v1/ssh/status/${username}`);
             setContainerStatus(res.data);
         } catch (err: any) {
             if (err.response?.status !== 404) {

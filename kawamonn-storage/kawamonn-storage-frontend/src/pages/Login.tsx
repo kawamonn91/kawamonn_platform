@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group } from '@mantine/core';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/client';
 import { useAuth } from '../App';
 
 export default function Login() {
@@ -14,7 +14,7 @@ export default function Login() {
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await axios.post('/api/v1/auth/login', { account_name: accountName, password });
+            const res = await api.post('/api/v1/auth/login', { account_name: accountName, password });
 
             const token = res.data.token;
             const base64Url = token.split('.')[1];

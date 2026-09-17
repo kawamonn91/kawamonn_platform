@@ -1,7 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import axios from 'axios';
-import { Capacitor } from '@capacitor/core';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -13,10 +11,8 @@ import SshDashboard from './pages/SshDashboard';
 import UserSettings from './pages/UserSettings';
 import '@mantine/core/styles.css';
 
-// Set absolute URL for API if running on Mobile Native (Capacitor)
-if (Capacitor.isNativePlatform()) {
-  axios.defaults.baseURL = 'https://storage.kawamonn.com'; // Adjust to target API domain
-}
+// The Capacitor native-platform base URL is set once in src/api/client.ts,
+// which every page now uses instead of the raw axios module.
 
 // -----------------------------------------------
 // Auth Context — manages auth state as React state

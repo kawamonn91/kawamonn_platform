@@ -4,7 +4,7 @@ import {
     NumberInput, TextInput, PasswordInput, Card, Stack, Divider
 } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/client';
 
 interface User {
     id: string;
@@ -42,26 +42,20 @@ export default function AdminDashboard() {
 
     const fetchUsers = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/v1/admin/users', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await api.get('/api/v1/admin/users');
             setUsers(Array.isArray(res.data) ? res.data : []);
             setError('');
         } catch (err: any) {
             setError(err.response?.data?.message || 'ユーザー一覧の取得に失敗しました');
-            if (axios.isAxiosError(err) && err.response?.status === 401) navigate('/admin/login');
         }
     };
 
     const handleUpdateUser = async () => {
         if (!editUser) return;
         try {
-            const token = localStorage.getItem('token');
             const quotaBytes = (editQuotaGB * 1e9).toString();
-            await axios.put(`/api/v1/admin/users/${editUser.id}`,
-                { quota_bytes: quotaBytes, email: editEmail },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put(`/api/v1/admin/users/${editUser.id}`,
+                { quota_bytes: quotaBytes, email: editEmail }
             );
             setEditUser(null);
             fetchUsers();
@@ -73,10 +67,7 @@ export default function AdminDashboard() {
     const handleDeleteUser = async (id: string, name: string) => {
         if (!window.confirm(`"${name}" を削除しますか？この操作は取り消せません。`)) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/admin/users/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/api/v1/admin/users/${id}`);
             fetchUsers();
         } catch {
             alert('ユーザーの削除に失敗しました');
@@ -87,9 +78,8 @@ export default function AdminDashboard() {
         setAddError('');
         if (!newUser.email) { setAddError('メールアドレスは必須です'); return; }
         try {
-            const token = localStorage.getItem('token');
             const quotaBytes = (newUser.quota_gb * 1e9).toString();
-            await axios.post('/api/v1/admin/users',
+            await api.post('/api/v1/admin/users',
                 {
                     email: newUser.email,
                     account_name: newUser.account_name || undefined,
@@ -97,8 +87,7 @@ export default function AdminDashboard() {
                     // instead of sending '' (which would fail minimum-length validation).
                     password: newUser.password || undefined,
                     quota_bytes: quotaBytes,
-                },
-                { headers: { Authorization: `Bearer ${token}` } }
+                }
             );
             setShowAddForm(false);
             setNewUser({ email: '', account_name: '', password: '', quota_gb: 20 });
@@ -115,10 +104,8 @@ export default function AdminDashboard() {
             return;
         }
         try {
-            const token = localStorage.getItem('token');
-            await axios.post('/api/v1/admin/broadcast',
-                { subject: broadcastSubject, message: broadcastMessage },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.post('/api/v1/admin/broadcast',
+                { subject: broadcastSubject, message: broadcastMessage }
             );
             setBroadcastStatus({ type: 'success', message: 'メッセージを一斉送信しました' });
             setTimeout(() => {

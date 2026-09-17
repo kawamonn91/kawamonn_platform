@@ -10,7 +10,7 @@ import {
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useDisclosure } from '@mantine/hooks';
-import axios from 'axios';
+import api from '../api/client';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useAuth } from '../App';
 
@@ -43,7 +43,7 @@ function getFileIcon(mime: string, size = 48) {
 
 // -----------------------------------------------
 // FileCard component (top-level, not nested)
-// Loads thumbnails via axios (auth header) → blob URL
+// Loads thumbnails via the shared API client → blob URL
 // -----------------------------------------------
 interface FileCardProps {
     file: FileItem;
@@ -117,9 +117,7 @@ function FileCard({ file, onDownload, onDelete, onEdit, onPreview }: FileCardPro
             if (!isImage && !isPdf) return;
 
             try {
-                const token = localStorage.getItem('token');
-                const response = await axios.get(`/api/v1/files/${file.id}/stream`, {
-                    headers: { Authorization: `Bearer ${token}` },
+                const response = await api.get(`/api/v1/files/${file.id}/stream`, {
                     responseType: 'arraybuffer',
                 });
                 if (cancelled) return;
@@ -276,14 +274,11 @@ export default function StorageDashboard() {
     const fetchFiles = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
             const pid = currentFolderId ?? 'null';
-            const res = await axios.get(`/api/v1/files?parent_id=${pid}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await api.get(`/api/v1/files?parent_id=${pid}`);
             setFiles(res.data.items ?? []);
         } catch (err) {
-            if (axios.isAxiosError(err) && err.response?.status === 401) navigate('/login');
+            // 401 is handled globally by the api client's interceptor
         } finally {
             setLoading(false);
         }
@@ -292,10 +287,8 @@ export default function StorageDashboard() {
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.post('/api/v1/files/folder',
-                { name: newFolderName.trim(), parent_id: currentFolderId },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.post('/api/v1/files/folder',
+                { name: newFolderName.trim(), parent_id: currentFolderId }
             );
             setNewFolderName('');
             closeFolderModal();
@@ -309,10 +302,8 @@ export default function StorageDashboard() {
     const handleCreateFile = async () => {
         if (!newFileName.trim()) return;
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.post('/api/v1/files/text',
-                { name: newFileName.trim(), content: '', parent_id: currentFolderId },
-                { headers: { Authorization: `Bearer ${token}` } }
+            const res = await api.post('/api/v1/files/text',
+                { name: newFileName.trim(), content: '', parent_id: currentFolderId }
             );
             setNewFileName('');
             closeNewFileModal();
@@ -331,9 +322,7 @@ export default function StorageDashboard() {
         setEditorLoading(true);
         openEditor();
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`/api/v1/files/${file.id}/stream`, {
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await api.get(`/api/v1/files/${file.id}/stream`, {
                 responseType: 'text',
                 transformResponse: [(data) => data],
             });
@@ -352,10 +341,8 @@ export default function StorageDashboard() {
         if (!editorFile) return;
         setEditorSaving(true);
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(`/api/v1/files/${editorFile.id}/content`,
-                { content: editorContent },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put(`/api/v1/files/${editorFile.id}/content`,
+                { content: editorContent }
             );
             closeEditor();
             fetchFiles();
@@ -398,15 +385,11 @@ export default function StorageDashboard() {
     }, [editorContent, closeEditor]);
 
     const uploadSingleFile = async (file: File, parentId: string | null) => {
-        const token = localStorage.getItem('token');
         const formData = new FormData();
         formData.append('file', file);
         if (parentId) formData.append('parent_id', parentId);
-        await axios.post('/api/v1/files', formData, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'multipart/form-data'
-            }
+        await api.post('/api/v1/files', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
         });
     };
 
@@ -441,7 +424,6 @@ export default function StorageDashboard() {
         event.target.value = '';
 
         setUploadProgress(0);
-        const token = localStorage.getItem('token');
         // Map from relative dir path → folder id in DB
         const dirMap: Record<string, string> = {};
         let done = 0;
@@ -463,9 +445,8 @@ export default function StorageDashboard() {
                 if (!dirMap[dirPath]) {
                     const parentId = i === 0 ? currentFolderId : dirMap[parentPath];
                     try {
-                        const res = await axios.post('/api/v1/files/folder',
-                            { name: parts[i], parent_id: parentId },
-                            { headers: { Authorization: `Bearer ${token}` } }
+                        const res = await api.post('/api/v1/files/folder',
+                            { name: parts[i], parent_id: parentId }
                         );
                         dirMap[dirPath] = res.data.id;
                     } catch (e: any) {
@@ -492,9 +473,7 @@ export default function StorageDashboard() {
 
     const handleDownload = async (file: FileItem) => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`/api/v1/files/${file.id}/stream`, {
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await api.get(`/api/v1/files/${file.id}/stream`, {
                 responseType: 'arraybuffer',
             });
             const blob = new Blob([res.data], { type: file.mime_type || 'application/octet-stream' });
@@ -506,7 +485,9 @@ export default function StorageDashboard() {
             a.click();
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } catch { /* silent */ }
+        } catch {
+            alert('ダウンロードに失敗しました');
+        }
     };
 
     const renderPdfPage = async (doc: any, pageNum: number) => {
@@ -530,9 +511,7 @@ export default function StorageDashboard() {
         setPreviewLoading(true);
         openPreview();
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`/api/v1/files/${file.id}/stream`, {
-                headers: { Authorization: `Bearer ${token}` },
+            const res = await api.get(`/api/v1/files/${file.id}/stream`, {
                 responseType: 'arraybuffer',
             });
             if (file.mime_type.startsWith('image/')) {
@@ -566,10 +545,7 @@ export default function StorageDashboard() {
         const label = file.mime_type === 'directory' ? 'フォルダ' : 'ファイル';
         if (!window.confirm(`"${file.name}" を削除しますか？${file.mime_type === 'directory' ? '\n※ フォルダ内のファイルも全て削除されます。' : ''}`)) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/api/v1/files/${file.id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete(`/api/v1/files/${file.id}`);
             fetchFiles();
         } catch (err) {
             alert(`${label}の削除に失敗しました`);

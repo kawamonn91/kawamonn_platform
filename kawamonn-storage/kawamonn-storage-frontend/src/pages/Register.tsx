@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text } from '@mantine/core';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/client';
 
 export default function Register() {
     const [email, setEmail] = useState('');
@@ -17,7 +17,7 @@ export default function Register() {
         e.preventDefault();
         setError('');
         try {
-            await axios.post('/api/v1/auth/send-otp', { email });
+            await api.post('/api/v1/auth/send-otp', { email });
             setSuccessMsg('OTP sent to your email! Please check your inbox.');
             setStep(2);
         } catch (err: any) {
@@ -29,7 +29,7 @@ export default function Register() {
         e.preventDefault();
         setError('');
         try {
-            await axios.post('/api/v1/auth/register', {
+            await api.post('/api/v1/auth/register', {
                 email,
                 password,
                 display_name: displayName,

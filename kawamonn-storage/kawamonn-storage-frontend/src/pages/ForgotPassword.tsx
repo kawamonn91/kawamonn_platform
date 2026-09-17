@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TextInput, Button, Paper, Title, Container, Text, Alert, Group, Anchor } from '@mantine/core';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/client';
 import { IconAlertCircle, IconCheck } from '@tabler/icons-react';
 
 export default function ForgotPassword() {
@@ -14,7 +14,7 @@ export default function ForgotPassword() {
         try {
             setStatus('loading');
             setMessage('');
-            await axios.post('/api/v1/auth/forgot-password', { email });
+            await api.post('/api/v1/auth/forgot-password', { email });
             setStatus('success');
             setMessage('If an account matches that email, a password reset link has been sent. Please check your inbox.');
         } catch (err: any) {

@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kawamonn-storage/kawamonn-storage-backend/**'
+      - 'kawamonn-storage/kawamonn-storage-frontend/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'kawamonn-storage/kawamonn-storage-backend/**'
+      - 'kawamonn-storage/kawamonn-storage-frontend/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kawamonn-storage/kawamonn-storage-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.20.8'
+
+      # Mixed @nestjs/* majors (core is v10, a few packages are v11) only
+      # resolve with legacy peer-dep handling — confirmed locally this
+      # session; a plain `npm ci` fails the same way.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # Reuses the project's own docker-compose.test.yml — the exact same
+      # throwaway Postgres/Redis/MinIO used for local `npm run test:e2e`,
+      # so CI and local dev can never drift apart. (GitHub Actions' native
+      # `services:` block can't override MinIO's start command, which is why
+      # this uses docker compose directly instead.)
+      - name: Start ephemeral test services (Postgres/Redis/MinIO)
+        run: docker compose -f docker-compose.test.yml up -d
+
+      - name: Wait for Postgres to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            docker compose -f docker-compose.test.yml exec -T test-db pg_isready -U test && break
+            sleep 2
+          done
+
+      # prisma db push does not create extensions on its own, and the schema's
+      # uuid_generate_v4() defaults need uuid-ossp to exist first.
+      - name: Create required Postgres extension
+        run: docker compose -f docker-compose.test.yml exec -T test-db psql -U test -d kawamonn_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+
+      # Load .env.test's throwaway values into every later step in this job.
+      # No production secret is referenced anywhere in this workflow.
+      - name: Load test environment variables
+        run: grep -v '^#' .env.test >> "$GITHUB_ENV"
+
+      - name: Push Prisma schema to the test database
+        run: |
+          npx prisma generate
+          npx prisma db push --skip-generate
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Run e2e tests
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
+
+      - name: Tear down test services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kawamonn-storage/kawamonn-storage-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.20.8'
+
+      - name: Install dependencies
+        run: npm install
+
+      # Advisory only for now: the codebase currently has ~45 pre-existing
+      # lint issues unrelated to this test/CI work (see the plan doc). Once
+      # those are cleaned up, remove `continue-on-error` to make this a real
+      # gate, matching the backend's strictness.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build

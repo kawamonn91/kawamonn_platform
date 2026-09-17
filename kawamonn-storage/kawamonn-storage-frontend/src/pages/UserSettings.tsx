@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { IconArrowLeft, IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/client';
 import { useAuth } from '../App';
 
 export default function UserSettings() {
@@ -20,10 +20,7 @@ export default function UserSettings() {
     useEffect(() => {
         const fetchMe = async () => {
             try {
-                const token = localStorage.getItem('token');
-                const res = await axios.get('/api/v1/users/me', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const res = await api.get('/api/v1/users/me');
                 setAccountName(res.data.account_name);
             } catch {
                 navigate('/login');
@@ -43,10 +40,8 @@ export default function UserSettings() {
             return;
         }
         try {
-            const token = localStorage.getItem('token');
-            await axios.put('/api/v1/users/me',
-                { current_password: currentPassword, new_password: newPassword },
-                { headers: { Authorization: `Bearer ${token}` } }
+            await api.put('/api/v1/users/me',
+                { current_password: currentPassword, new_password: newPassword }
             );
             setCurrentPassword('');
             setNewPassword('');
@@ -62,10 +57,7 @@ export default function UserSettings() {
             return;
         }
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete('/api/v1/users/me', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete('/api/v1/users/me');
             logout();
             navigate('/login');
         } catch (err: any) {
