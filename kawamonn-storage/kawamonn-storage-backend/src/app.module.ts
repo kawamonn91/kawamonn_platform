@@ -22,7 +22,10 @@ import { join } from 'path';
   imports: [
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', '..', 'kawamonn-storage-frontend', 'dist'),
-      exclude: ['/api/(.*)'],
+      // Express 5 (bundled by @nestjs/platform-express v11) uses path-to-regexp v8,
+      // which dropped support for the old unnamed-regex-group wildcard syntax
+      // ('/api/(.*)'); {*splat} is the new equivalent that also matches the bare '/api' path.
+      exclude: ['/api/{*splat}'],
     }),
     ThrottlerModule.forRoot([
       {
