@@ -24,13 +24,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18.20.8'
+          node-version: '24.21.0'
 
-      # Mixed @nestjs/* majors (core is v10, a few packages are v11) only
-      # resolve with legacy peer-dep handling — confirmed locally this
-      # session; a plain `npm ci` fails the same way.
+      # All @nestjs/* packages are now aligned on v11, which requires
+      # Node >= 20 — matches the node-version above. --legacy-peer-deps is
+      # no longer needed now that the peer ranges actually agree.
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install
 
       # Reuses the project's own docker-compose.test.yml — the exact same
       # throwaway Postgres/Redis/MinIO used for local `npm run test:e2e`,
