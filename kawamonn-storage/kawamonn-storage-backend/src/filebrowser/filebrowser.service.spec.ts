@@ -8,16 +8,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SyncService } from '../sync/sync.service';
 
 /**
- * FileBrowserService resolves paths under the hardcoded production tree
- * (/home/pi/hdd/ssh/{username}), so these tests exercise the REAL filesystem
- * under a disposable, uniquely-named test account rather than mocking `fs` —
- * the whole point of this suite is verifying real symlink semantics, which a
- * mocked filesystem cannot faithfully reproduce. The test directory is removed
- * in afterAll. (Requires /home/pi/hdd/ssh to be writable; on a CI runner other
- * than this Pi, a setup step would need to create that directory tree first —
- * out of scope for this pass, see the CI plan's Phase (e).)
+ * FileBrowserService resolves paths under SSH_BASE/{username}, so these tests
+ * exercise the REAL filesystem under a disposable, uniquely-named test account
+ * rather than mocking `fs` — the whole point of this suite is verifying real
+ * symlink semantics, which a mocked filesystem cannot faithfully reproduce.
+ * jest-setup.ts points SSH_BASE at a throwaway temp directory (instead of the
+ * hardcoded production path FileBrowserService falls back to) before this
+ * file's own imports run, so this works unchanged on any machine, including CI.
+ * The test directory is removed in afterAll.
  */
-const SSH_BASE = '/home/pi/hdd/ssh';
+const SSH_BASE = process.env.SSH_BASE as string;
 const TEST_USERNAME = `__filebrowser_spec_${process.pid}_${Date.now()}__`;
 const testRoot = path.join(SSH_BASE, TEST_USERNAME);
 const OUTSIDE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-outside-'));

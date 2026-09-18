@@ -9,7 +9,10 @@ import { SyncService } from '../sync/sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const SSH_BASE = '/home/pi/hdd/ssh';
+// SSH_BASE を環境変数で上書き可能にしているのはテスト専用(本番の .env/PM2 設定では
+// 未設定のため、常にデフォルトの実パスに解決される)。filebrowser.service.spec.ts が
+// 実ファイルシステム上でシンボリックリンクの挙動を検証するために使用する。
+const SSH_BASE = process.env.SSH_BASE || '/home/pi/hdd/ssh';
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export interface FileEntry {

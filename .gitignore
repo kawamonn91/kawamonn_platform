@@ -50,10 +50,15 @@ Thumbs.db
 
 # ===================
 # User data (runtime storage - DO NOT DELETE)
+# Anchored to the repo root (leading /) so these only match the real
+# runtime user-data directories there — an unanchored pattern like `users/`
+# also matched source directories of the same name anywhere in the repo
+# (e.g. kawamonn-storage-backend/src/users/, the Android app's
+# java/com/kawamonn/ package), silently excluding real source files from git.
 # ===================
-users/
-kawamonn/
-katsumi/
-toya/
-admin_kawamonn/
-myproject/
+/users/
+/kawamonn/
+/katsumi/
+/toya/
+/admin_kawamonn/
+/myproject/
