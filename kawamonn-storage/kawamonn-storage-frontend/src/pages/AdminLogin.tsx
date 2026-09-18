@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/client';
-import { useAuth } from '../App';
+import api, { getErrorMessage } from '../api/client';
+import { useAuth } from '../AuthContext';
 
 export default function AdminLogin() {
     const [accountName, setAccountName] = useState('');
@@ -21,8 +21,8 @@ export default function AdminLogin() {
             await api.post('/api/v1/auth/admin/login', { account_name: accountName, password });
             setSuccessMsg('Admin credentials verified. An OTP has been sent to the registered admin email.');
             setStep(2);
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Admin login failed');
+        } catch (err) {
+            setError(getErrorMessage(err, 'Admin login failed'));
         }
     };
 
@@ -43,8 +43,8 @@ export default function AdminLogin() {
             login(token, payload.role, payload.account_name);
             navigate('/admin');
 
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Verification failed');
+        } catch (err) {
+            setError(getErrorMessage(err, 'Verification failed'));
         }
     };
 

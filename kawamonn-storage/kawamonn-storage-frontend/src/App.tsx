@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -9,32 +9,11 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin';
 import SshDashboard from './pages/SshDashboard';
 import UserSettings from './pages/UserSettings';
+import { AuthContext, useAuth } from './AuthContext';
 import '@mantine/core/styles.css';
 
 // The Capacitor native-platform base URL is set once in src/api/client.ts,
 // which every page now uses instead of the raw axios module.
-
-// -----------------------------------------------
-// Auth Context — manages auth state as React state
-// so that navigation triggers re-renders properly
-// -----------------------------------------------
-interface AuthContextValue {
-  isAuthenticated: boolean;
-  userRole: string | null;
-  login: (token: string, role: string, accountName: string) => void;
-  logout: () => void;
-}
-
-export const AuthContext = createContext<AuthContextValue>({
-  isAuthenticated: false,
-  userRole: null,
-  login: () => {},
-  logout: () => {},
-});
-
-export function useAuth() {
-  return useContext(AuthContext);
-}
 
 // -----------------------------------------------
 // Protected Route wrappers

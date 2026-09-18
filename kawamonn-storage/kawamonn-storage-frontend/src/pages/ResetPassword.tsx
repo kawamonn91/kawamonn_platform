@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PasswordInput, Button, Paper, Title, Container, Text, Alert, Stack } from '@mantine/core';
 import { useSearchParams, Link } from 'react-router-dom';
-import api from '../api/client';
+import api, { getErrorMessage } from '../api/client';
 import { IconAlertCircle, IconCheck } from '@tabler/icons-react';
 
 export default function ResetPassword() {
@@ -40,9 +40,9 @@ export default function ResetPassword() {
             await api.post('/api/v1/auth/reset-password', { token, new_password: password });
             setStatus('success');
             setMessage('Your password has been reset successfully.');
-        } catch (err: any) {
+        } catch (err) {
             setStatus('error');
-            setMessage(err.response?.data?.message || 'Failed to reset password. The link might be expired.');
+            setMessage(getErrorMessage(err, 'Failed to reset password. The link might be expired.'));
         }
     };
 

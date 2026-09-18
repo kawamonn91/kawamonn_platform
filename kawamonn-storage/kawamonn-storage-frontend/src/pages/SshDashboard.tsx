@@ -12,13 +12,14 @@ import {
     IconChevronRight, IconHome, IconDots, IconFilePlus, IconCheck, IconFileText,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import api from '../api/client';
-import { useAuth } from '../App';
+import api, { getErrorMessage } from '../api/client';
+import { useAuth } from '../AuthContext';
 import { formatBytes, fetchWithRetry, isEditable } from './sshFileHelpers';
 
 type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
@@ -75,8 +76,8 @@ function FileBrowser() {
             }));
             setEntries(res.data.entries);
             setCurrentPath(path);
-        } catch (e: any) {
-            setError(e.response?.data?.message || 'ディレクトリを取得できませんでした');
+        } catch (e) {
+            setError(getErrorMessage(e, 'ディレクトリを取得できませんでした'));
         } finally {
             setLoading(false);
         }
@@ -113,7 +114,7 @@ function FileBrowser() {
             link.download = entry.name;
             link.click();
             window.URL.revokeObjectURL(url);
-        } catch (e: any) {
+        } catch {
             setError('ダウンロードに失敗しました');
         }
     };
@@ -123,8 +124,8 @@ function FileBrowser() {
         try {
             await api.delete('/api/v1/filebrowser/delete', { params: { path: entry.path } });
             fetchDir(currentPath);
-        } catch (e: any) {
-            setError(e.response?.data?.message || '削除に失敗しました');
+        } catch (e) {
+            setError(getErrorMessage(e, '削除に失敗しました'));
         }
     };
 
@@ -139,8 +140,8 @@ function FileBrowser() {
                 params: { path: currentPath },
             });
             fetchDir(currentPath);
-        } catch (e: any) {
-            setError(e.response?.data?.message || 'アップロードに失敗しました');
+        } catch (e) {
+            setError(getErrorMessage(e, 'アップロードに失敗しました'));
         }
         e.target.value = '';
     };
@@ -153,8 +154,8 @@ function FileBrowser() {
             setNewFolderModal(false);
             setNewFolderName('');
             fetchDir(currentPath);
-        } catch (e: any) {
-            setError(e.response?.data?.message || 'フォルダ作成に失敗しました');
+        } catch (e) {
+            setError(getErrorMessage(e, 'フォルダ作成に失敗しました'));
         }
     };
 
@@ -176,8 +177,8 @@ function FileBrowser() {
             setRenameModal(false);
             setRenameTarget(null);
             fetchDir(currentPath);
-        } catch (e: any) {
-            setError(e.response?.data?.message || '名前変更に失敗しました');
+        } catch (e) {
+            setError(getErrorMessage(e, '名前変更に失敗しました'));
         }
     };
 
@@ -195,8 +196,8 @@ function FileBrowser() {
                 transformResponse: [(data) => data],  // JSON パースをバイパス
             }));
             setEditorContent(res.data);
-        } catch (e: any) {
-            setError(e.response?.data?.message || 'ファイルを読み込めませんでした(自動復旧に失敗しました)');
+        } catch (e) {
+            setError(getErrorMessage(e, 'ファイルを読み込めませんでした(自動復旧に失敗しました)'));
             setEditorModal(false);
         } finally {
             setEditorLoading(false);
@@ -211,8 +212,8 @@ function FileBrowser() {
             );
             setEditorModal(false);
             fetchDir(currentPath);
-        } catch (e: any) {
-            setError(e.response?.data?.message || '保存に失敗しました');
+        } catch (e) {
+            setError(getErrorMessage(e, '保存に失敗しました'));
         } finally {
             setEditorSaving(false);
         }
@@ -663,6 +664,10 @@ export default function SshDashboard() {
     const [sessionState, setSessionState] = useState<SessionState>('idle');
     const [errorMsg, setErrorMsg] = useState('');
     const [containerStatus, setContainerStatus] = useState<SshStatus | null>(null);
+    // xtermRef.current 自体は ref なので変化しても再レンダーされない。
+    // render 中に ref を直接読んで「初期化済みか」を判定すると表示が更新されない
+    // タイミングが生まれるため、state としても保持する。
+    const [terminalReady, setTerminalReady] = useState(false);
 
     // refs
     const terminalRef = useRef<HTMLDivElement>(null);
@@ -680,15 +685,15 @@ export default function SshDashboard() {
             if (!username) return;
             const res = await api.get(`/api/v1/ssh/status/${username}`);
             setContainerStatus(res.data);
-        } catch (err: any) {
-            if (err.response?.status !== 404) {
+        } catch (err) {
+            if (!axios.isAxiosError(err) || err.response?.status !== 404) {
                 console.error('Failed to fetch SSH status');
             }
         }
     }, []);
 
     useEffect(() => {
-        fetchStatus();
+        (async () => { await fetchStatus(); })();
     }, [fetchStatus]);
 
     // ----------------------------------------------
@@ -740,11 +745,16 @@ export default function SshDashboard() {
         setTimeout(() => fitAddon.fit(), 50);
 
         xtermRef.current = term;
+        setTerminalReady(true);
         fitAddonRef.current = fitAddon;
 
         // ターミナルリサイズ監視
         const ro = new ResizeObserver(() => {
-            try { fitAddon.fit(); } catch (_) {}
+            try {
+                fitAddon.fit();
+            } catch {
+                // fit() can throw if the terminal was detached from the DOM mid-resize; safe to ignore.
+            }
             if (socketRef.current?.connected && xtermRef.current) {
                 socketRef.current.emit('resize', {
                     cols: xtermRef.current.cols,
@@ -1230,7 +1240,7 @@ export default function SshDashboard() {
                                     )}
 
                                     {/* 起動中スピナー */}
-                                    {sessionState === 'starting' && !xtermRef.current && (
+                                    {sessionState === 'starting' && !terminalReady && (
                                         <Stack
                                             align="center"
                                             justify="center"

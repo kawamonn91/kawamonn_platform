@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group } from '@mantine/core';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api/client';
-import { useAuth } from '../App';
+import api, { getErrorMessage } from '../api/client';
+import { useAuth } from '../AuthContext';
 
 export default function Login() {
     const [accountName, setAccountName] = useState('');
@@ -27,8 +27,8 @@ export default function Login() {
             // Update auth context state first, then navigate
             login(token, decoded.role, decoded.account_name);
             navigate('/');
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Login failed');
+        } catch (err) {
+            setError(getErrorMessage(err, 'Login failed'));
         }
     };
 

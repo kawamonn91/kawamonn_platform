@@ -5,8 +5,8 @@ import {
 } from '@mantine/core';
 import { IconArrowLeft, IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/client';
-import { useAuth } from '../App';
+import api, { getErrorMessage } from '../api/client';
+import { useAuth } from '../AuthContext';
 
 export default function UserSettings() {
     const navigate = useNavigate();
@@ -27,7 +27,7 @@ export default function UserSettings() {
             }
         };
         fetchMe();
-    }, []);
+    }, [navigate]);
 
     const handleUpdatePassword = async () => {
         setPassMsg(null);
@@ -47,8 +47,8 @@ export default function UserSettings() {
             setNewPassword('');
             setConfirmPassword('');
             setPassMsg({ type: 'success', text: 'パスワードを更新しました' });
-        } catch (err: any) {
-            setPassMsg({ type: 'error', text: err.response?.data?.message || 'パスワード変更に失敗しました' });
+        } catch (err) {
+            setPassMsg({ type: 'error', text: getErrorMessage(err, 'パスワード変更に失敗しました') });
         }
     };
 
@@ -60,8 +60,8 @@ export default function UserSettings() {
             await api.delete('/api/v1/users/me');
             logout();
             navigate('/login');
-        } catch (err: any) {
-            alert(err.response?.data?.message || 'アカウント削除に失敗しました');
+        } catch (err) {
+            alert(getErrorMessage(err, 'アカウント削除に失敗しました'));
         }
     };
 

@@ -33,3 +33,14 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// Shared by every page's catch blocks: pulls the backend's error message out
+// of an axios error (falling back to a page-specific default) without each
+// call site needing its own `any`-typed access into the error shape.
+export function getErrorMessage(err: unknown, fallback: string): string {
+    if (axios.isAxiosError(err)) {
+        const message = (err.response?.data as { message?: string } | undefined)?.message;
+        if (message) return message;
+    }
+    return fallback;
+}

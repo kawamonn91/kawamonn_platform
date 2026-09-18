@@ -90,13 +90,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Advisory only for now: the codebase currently has ~45 pre-existing
-      # lint issues unrelated to this test/CI work (see the plan doc). Once
-      # those are cleaned up, remove `continue-on-error` to make this a real
-      # gate, matching the backend's strictness.
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Run tests
         run: npm run test

@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDisclosure } from '@mantine/hooks';
 import api from '../api/client';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useAuth } from '../App';
+import { useAuth } from '../AuthContext';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -260,7 +260,7 @@ export default function StorageDashboard() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [pdfPageNum, setPdfPageNum] = useState(1);
     const [pdfTotalPages, setPdfTotalPages] = useState(1);
-    const [pdfDocRef, setPdfDocRef] = useState<any>(null);
+    const [pdfDocRef, setPdfDocRef] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
     const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
 
     const navigate = useNavigate();
@@ -269,20 +269,20 @@ export default function StorageDashboard() {
     const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
     const { logout } = useAuth();
 
-    useEffect(() => { fetchFiles(); }, [currentFolderId]);
-
-    const fetchFiles = async () => {
+    const fetchFiles = useCallback(async () => {
         setLoading(true);
         try {
             const pid = currentFolderId ?? 'null';
             const res = await api.get(`/api/v1/files?parent_id=${pid}`);
             setFiles(res.data.items ?? []);
-        } catch (err) {
+        } catch {
             // 401 is handled globally by the api client's interceptor
         } finally {
             setLoading(false);
         }
-    };
+    }, [currentFolderId]);
+
+    useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
@@ -337,7 +337,7 @@ export default function StorageDashboard() {
     };
 
 
-    const handleSaveFile = async () => {
+    const handleSaveFile = useCallback(async () => {
         if (!editorFile) return;
         setEditorSaving(true);
         try {
@@ -352,7 +352,7 @@ export default function StorageDashboard() {
         } finally {
             setEditorSaving(false);
         }
-    };
+    }, [editorFile, editorContent, closeEditor, fetchFiles]);
 
     // エディタのキーボードハンドラー（nano風）
     const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -382,7 +382,7 @@ export default function StorageDashboard() {
             closeEditor();
             return;
         }
-    }, [editorContent, closeEditor]);
+    }, [closeEditor, handleSaveFile]);
 
     const uploadSingleFile = async (file: File, parentId: string | null) => {
         const formData = new FormData();
@@ -449,7 +449,7 @@ export default function StorageDashboard() {
                             { name: parts[i], parent_id: parentId }
                         );
                         dirMap[dirPath] = res.data.id;
-                    } catch (e: any) {
+                    } catch (e) {
                         console.error('Dir create failed', e);
                     }
                 }
@@ -490,7 +490,7 @@ export default function StorageDashboard() {
         }
     };
 
-    const renderPdfPage = async (doc: any, pageNum: number) => {
+    const renderPdfPage = async (doc: pdfjsLib.PDFDocumentProxy, pageNum: number) => {
         if (!pdfCanvasRef.current) return;
         const page = await doc.getPage(pageNum);
         const vp0 = page.getViewport({ scale: 1 });
@@ -547,7 +547,7 @@ export default function StorageDashboard() {
         try {
             await api.delete(`/api/v1/files/${file.id}`);
             fetchFiles();
-        } catch (err) {
+        } catch {
             alert(`${label}の削除に失敗しました`);
         }
     };
@@ -638,7 +638,7 @@ export default function StorageDashboard() {
                 type="file"
                 ref={folderInputRef}
                 style={{ display: 'none' }}
-                // @ts-ignore – webkitdirectory is non-standard but widely supported
+                // @ts-expect-error – webkitdirectory is non-standard but widely supported
                 webkitdirectory=""
                 multiple
                 onChange={handleFolderUpload}

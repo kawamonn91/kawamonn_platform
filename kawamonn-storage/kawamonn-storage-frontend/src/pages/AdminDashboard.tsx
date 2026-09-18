@@ -4,7 +4,7 @@ import {
     NumberInput, TextInput, PasswordInput, Card, Stack, Divider
 } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/client';
+import api, { getErrorMessage } from '../api/client';
 
 interface User {
     id: string;
@@ -38,17 +38,19 @@ export default function AdminDashboard() {
 
     const navigate = useNavigate();
 
-    useEffect(() => { fetchUsers(); }, []);
-
     const fetchUsers = async () => {
         try {
             const res = await api.get('/api/v1/admin/users');
             setUsers(Array.isArray(res.data) ? res.data : []);
             setError('');
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'ユーザー一覧の取得に失敗しました');
+        } catch (err) {
+            setError(getErrorMessage(err, 'ユーザー一覧の取得に失敗しました'));
         }
     };
+
+    useEffect(() => {
+        (async () => { await fetchUsers(); })();
+    }, []);
 
     const handleUpdateUser = async () => {
         if (!editUser) return;
@@ -92,8 +94,8 @@ export default function AdminDashboard() {
             setShowAddForm(false);
             setNewUser({ email: '', account_name: '', password: '', quota_gb: 20 });
             fetchUsers();
-        } catch (err: any) {
-            setAddError(err.response?.data?.message || 'ユーザー作成に失敗しました');
+        } catch (err) {
+            setAddError(getErrorMessage(err, 'ユーザー作成に失敗しました'));
         }
     };
 
@@ -114,8 +116,8 @@ export default function AdminDashboard() {
                 setBroadcastMessage('');
                 setBroadcastStatus({ type: '', message: '' });
             }, 3000);
-        } catch (err: any) {
-            setBroadcastStatus({ type: 'error', message: err.response?.data?.message || '送信に失敗しました' });
+        } catch (err) {
+            setBroadcastStatus({ type: 'error', message: getErrorMessage(err, '送信に失敗しました') });
         }
     };
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text } from '@mantine/core';
 import { useNavigate, Link } from 'react-router-dom';
-import api from '../api/client';
+import api, { getErrorMessage } from '../api/client';
 
 export default function Register() {
     const [email, setEmail] = useState('');
@@ -20,8 +20,8 @@ export default function Register() {
             await api.post('/api/v1/auth/send-otp', { email });
             setSuccessMsg('OTP sent to your email! Please check your inbox.');
             setStep(2);
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Failed to send OTP');
+        } catch (err) {
+            setError(getErrorMessage(err, 'Failed to send OTP'));
         }
     };
 
@@ -36,8 +36,8 @@ export default function Register() {
                 otp_code: otpCode
             });
             navigate('/login');
-        } catch (err: any) {
-            setError(err.response?.data?.message || 'Registration failed');
+        } catch (err) {
+            setError(getErrorMessage(err, 'Registration failed'));
         }
     };
 
