@@ -93,7 +93,10 @@ collect_diagnostics() {
 }
 
 collect_db_diagnostics() {
-  docker logs kawamonn_db --tail 300 2>&1 | grep -E "FATAL|PANIC" | tail -n 3 | cut -c1-300
+  # --since に絞ることで、今回の障害と無関係な過去の再起動時のFATAL行
+  # (例: 深夜のconditional reboot時のもの)が紛れ込むのを防ぐ。
+  # チェック間隔(5分)+検知・再起動試行の時間を見込んで直近12分に限定。
+  docker logs kawamonn_db --since 12m 2>&1 | grep -E "FATAL|PANIC" | tail -n 3 | cut -c1-300
 }
 
 if check_all; then
