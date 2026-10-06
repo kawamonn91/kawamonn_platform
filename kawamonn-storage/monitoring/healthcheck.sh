@@ -115,13 +115,19 @@ if [[ -n "$FAILED_APPS" ]]; then
     log "Restarting $app"
     pm2 restart "$app" >/dev/null 2>&1
   done
-  # Nest needs ~10s to boot on the Pi; poll up to 40s so a slow start is not
-  # reported as "still failing".
-  for _ in 1 2 3 4 5 6 7 8; do
-    sleep 5
-    check_all && break
-  done
 fi
+
+# Poll for recovery either way, even when nothing needed restarting: Nest
+# needs ~10s to boot after a restart, and a bare site_ok() failure (pm2/API
+# both OK, only the public URL unreachable) usually means a brief Cloudflare
+# Tunnel reconnect blip that clears on its own within seconds — previously
+# FAILED_APPS stayed empty in that case, skipping this wait entirely and
+# declaring "still failing" (and emailing) on the very next check with no
+# chance to recover. Poll up to 40s in both cases instead.
+for _ in 1 2 3 4 5 6 7 8; do
+  sleep 5
+  check_all && break
+done
 
 if check_all; then
   log "Recovered automatically after restart of:$FAILED_APPS"
