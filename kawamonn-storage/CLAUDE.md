@@ -122,6 +122,18 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   ユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)
 - SSH コンテナの 22 番はループバック(`127.0.0.1`)にだけ公開する(`ssh.service.ts`)。ブラウザ端末も
   SSH ゲートウェイも `docker exec` で接続するので、LAN に公開する必要はない。この設定は新しく作るコンテナから効く
+- **SSH コンテナのイメージ `kawamonn-ssh-base:latest` は `infrastructure/ssh-provisioning/` の Dockerfile と
+  `entrypoint.sh` で作る。** 同じ目的の古い `infrastructure/docker/ssh-env/` は使われておらず、2026-10-12 に削除した
+  (`ssh-provisioning/provision.sh` も podman を使っていた頃の古い手順で、今は使っていない)
+- コンテナ内のユーザーは **UID/GID 70000**(`entrypoint.sh` の `USER_UID`)。ホームはホストのフォルダをそのまま
+  つなぐので、この番号がホスト上のファイルの所有者になる。ホストの一般ユーザー(1000〜60000)、systemd の動的ユーザー
+  (61184〜65519)、サブ UID(100000〜)と重ならない番号にしてある。以前は UID を指定せずに作っていたため 1001 になり、
+  ホスト上では同じ UID を持つ別の利用者のアカウントの所有に見えていた。起動のたびにホームの所有者を付け直すので、
+  古いホームも次に使ったときに 70000 になる。backend(pi)は各ホームの ACL(`user:pi:rwx`)でアクセスするので所有者に依存しない
+- イメージは texlive-full などを含み約 6.5GB あって、作り直すと回線への負荷が大きい。`entrypoint.sh` だけを変えたときは、
+  既存のイメージの上に差し替えの層を重ねて作り直す:
+  `cd infrastructure/ssh-provisioning && printf 'FROM kawamonn-ssh-base:latest\nCOPY entrypoint.sh /usr/local/bin/entrypoint.sh\nRUN chmod +x /usr/local/bin/entrypoint.sh\n' | docker build -t kawamonn-ssh-base:latest -f - .`
+  (変わるのは新しく作るコンテナから。既存のコンテナを作り直すと、ホーム以外の場所に入れたものは消える)
 - 期限切れで削除(`status=deleted`)になったユーザーは、行が DB に残っていても、ログイン(`validateUser`。パスワード照合後に
   照合失敗と同じエラーで拒否)・HTTP の認証(`JwtStrategy`)・ブラウザ端末(`terminal.gateway.ts`)のすべてで拒否する
 - MinIO のバケットには匿名アクセスを許可しない(compose の `minio-init` で `mc anonymous set none`)。
