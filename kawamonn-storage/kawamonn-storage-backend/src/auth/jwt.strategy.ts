@@ -19,7 +19,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       where: { id: payload.sub },
     });
 
-    if (!user) {
+    // 削除済み、または期限切れで削除(status=deleted)になったユーザーのトークンは、
+    // 有効期限内でも受け付けない(ブラウザ端末の terminal.gateway.ts と同じ扱い)
+    if (!user || user.status === 'deleted') {
       throw new UnauthorizedException();
     }
 

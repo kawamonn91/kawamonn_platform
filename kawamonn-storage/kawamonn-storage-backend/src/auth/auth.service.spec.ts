@@ -183,6 +183,20 @@ describe('AuthService', () => {
       expect(argon2.verify).not.toHaveBeenCalled();
     });
 
+    it('rejects an expired (status=deleted) account even with the correct password', async () => {
+      mockUsersService.findByAccountName.mockResolvedValue({
+        id: 'u1',
+        account_name: 'alice',
+        status: 'deleted',
+        password_hash: '$argon2id$v=19$...',
+      });
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.validateUser('alice', 'correct-password'),
+      ).rejects.toThrow('Invalid credentials');
+    });
+
     it('throws on a wrong password without revealing which check failed', async () => {
       mockUsersService.findByAccountName.mockResolvedValue({
         id: 'u1',

@@ -58,7 +58,9 @@ export class AuthService {
       console.error('Error during password verification fallback', e);
     }
 
-    if (user && isMatch) {
+    // 期限切れで削除(status=deleted)になったアカウントは、パスワードが合っていても拒否する。
+    // パスワードの照合後に、照合失敗と同じエラーで返し、アカウントの状態を推測させない。
+    if (user && isMatch && user.status !== 'deleted') {
       const { password_hash, ...result } = user;
       return result;
     }
