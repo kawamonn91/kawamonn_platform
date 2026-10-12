@@ -18,10 +18,11 @@ services:
       - "6380:6379" # different from production's 6379 on purpose
 
   test-minio:
-    # MinIO no longer serves fresh pulls of this image from Docker Hub
-    # (confirmed: fails with "pull access denied" on a cold GitHub Actions
-    # runner). quay.io/minio/minio is their own current registry.
-    image: quay.io/minio/minio:latest
+    # MinIO 公式のビルド済みイメージは配布が終わり、Docker Hub(minio/minio)も
+    # quay.io(quay.io/minio/minio)も取得できなくなった(2026-10 に CI で確認)。
+    # Chainguard が MinIO のソースからビルドして配布しているイメージを使う。
+    # エントリポイントが /usr/bin/minio なので、下の command はそのまま使える。
+    image: cgr.dev/chainguard/minio:latest
     container_name: kawamonn_test_minio
     environment:
       MINIO_ROOT_USER: test-access-key

@@ -75,9 +75,11 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   Androidの `MainActivity.java` を誤って巻き込み、**一度もgitにコミットされていなかった**という実害があった
 - **GitHub Actionsの `$GITHUB_ENV` はシェルのクォート除去を行わない。** `.env.test` の値はダブルクォートで
   囲まない(`DATABASE_URL=postgresql://...` のように生の値のまま)
-- **MinIOのDockerイメージ**は `minio/minio` ではなく `quay.io/minio/minio` を使う
-  (Docker Hubの匿名pullが拒否されるようになったため。本番の `docker-compose.yml` も 2026-10 に切り替え済み)。
-  `docker compose up` で既存イメージを使うときは `--pull never` を付けると、取り直しで失敗しない
+- **MinIO 公式のビルド済みイメージは配布が終わった。** `minio/minio`(Docker Hub)も `quay.io/minio/minio` も
+  新しく取得できない(2026-10-12 に CI の e2e が取得失敗で落ちて判明)。テスト用の `docker-compose.test.yml` は、
+  Chainguard が MinIO のソースからビルドしている `cgr.dev/chainguard/minio:latest` を使う(エントリポイントが
+  `/usr/bin/minio`、実行ユーザーは 65532)。本番の `docker-compose.yml` は手元に残っている `quay.io/minio/minio` の
+  イメージで動いているので、作り直すときは必ず `--pull never` を付ける(付けないと取得に失敗する)
 - **ヘルスチェック**(`kawamonn-storage/monitoring/healthcheck.sh`、cron 5分毎)は、
   2026年10月の修正で「公開URLへの疎通確認(`site_ok`)だけが失敗した場合」も、アプリの再起動が
   必要な場合と同じ最大40秒のリトライ待機をしてから失敗確定するようになった。
