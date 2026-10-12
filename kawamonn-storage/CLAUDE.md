@@ -24,18 +24,16 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   Redis/BullMQ、MinIO(S3互換)、dockerode、Passport/JWT、class-validator
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 21 suites/88 tests + e2e 4 suites/11 tests)、
+- **テスト**: Jest(backend: unit 22 suites/92 tests + e2e 4 suites/11 tests)、
   Vitest(frontend: 2 files/18 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
   3ジョブが走る。lint は backend・frontend とも実gate(0件維持)で、backend は `npm run lint:check`(自動修正なし)で判定する。
   infra ジョブはシェルスクリプトの ShellCheck(`-S warning`)と Docker Compose ファイルの検証。
   依存は `npm ci` で入れるので、`package.json` を変えたら `package-lock.json` も必ず一緒にコミットする
-- **死活監視**: `.github/workflows/uptime.yml` が30分ごとに GitHub 側から Cloudflare API でトンネルの接続状態を
-  確認し、停止(down)ならメールが届く。Secrets(`CF_API_TOKEN`・`CF_ACCOUNT_ID`・`CF_TUNNEL_ID`)が未登録の間は
-  何もせず成功で終わる。**公開 URL を GitHub から直接取得する方式は使えない**(Cloudflare のボット対策が
-  データセンターの IP を 403 で遮断し、Pi まで届かない。2026-10-12 に確認)。
-  公開リポジトリは60日間 push が無いとスケジュール実行が自動で止まるので、止まっていたら Actions の画面から再有効化する
+- **死活監視**: Pi 本体や回線の停止は、Cloudflare の通知機能(トンネルの状態の変化をメールで通知)で検知する。
+  **GitHub Actions から公開 URL を取得する方式は使えない**(Cloudflare のボット対策がデータセンターの IP を 403 で
+  遮断し、Pi まで届かない。2026-10-12 に確認)。そのため一度作った uptime.yml は削除した
 - **デプロイ**: PM2(`kawamonn-storage/ecosystem.config.js`)、Docker Compose(Postgres/Redis/MinIO/cloudflared)、
   Cloudflare Tunnel(ポート開放なし)
 
@@ -76,10 +74,11 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - **GitHub Actionsの `$GITHUB_ENV` はシェルのクォート除去を行わない。** `.env.test` の値はダブルクォートで
   囲まない(`DATABASE_URL=postgresql://...` のように生の値のまま)
 - **MinIO 公式のビルド済みイメージは配布が終わった。** `minio/minio`(Docker Hub)も `quay.io/minio/minio` も
-  新しく取得できない(2026-10-12 に CI の e2e が取得失敗で落ちて判明)。テスト用の `docker-compose.test.yml` は、
-  Chainguard が MinIO のソースからビルドしている `cgr.dev/chainguard/minio:latest` を使う(エントリポイントが
-  `/usr/bin/minio`、実行ユーザーは 65532)。本番の `docker-compose.yml` は手元に残っている `quay.io/minio/minio` の
-  イメージで動いているので、作り直すときは必ず `--pull never` を付ける(付けないと取得に失敗する)
+  新しく取得できない(2026-10-12 に CI の e2e が取得失敗で落ちて判明)。本番の `docker-compose.yml` も
+  テスト用の `docker-compose.test.yml` も、Chainguard が MinIO のソースからビルドしている `cgr.dev/chainguard/minio:latest` を使う
+  (エントリポイントは `/usr/bin/minio`)。**root ではなく UID 65532 で動くので、`minio_data` の所有者は 65532 にしておく**
+  (所有者が違うと起動に失敗する)。初期化用の `minio-init` は、シェルのある `cgr.dev/chainguard/minio-client:latest-dev` を使う。
+  `docker compose up` で既存イメージを使うときは `--pull never` を付けると、取り直しで失敗しない
 - **ヘルスチェック**(`kawamonn-storage/monitoring/healthcheck.sh`、cron 5分毎)は、
   2026年10月の修正で「公開URLへの疎通確認(`site_ok`)だけが失敗した場合」も、アプリの再起動が
   必要な場合と同じ最大40秒のリトライ待機をしてから失敗確定するようになった。
@@ -123,15 +122,15 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   ユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)
 - SSH コンテナの 22 番はループバック(`127.0.0.1`)にだけ公開する(`ssh.service.ts`)。ブラウザ端末も
   SSH ゲートウェイも `docker exec` で接続するので、LAN に公開する必要はない。この設定は新しく作るコンテナから効く
-- ブラウザ端末(WebSocket)は接続時に、JWT の検証に加えて DB でユーザーが存在し失効(`status=deleted`)して
-  いないことを確認する(HTTP 側の `JwtStrategy` と同じ扱い。`terminal.gateway.ts`)
+- 期限切れで削除(`status=deleted`)になったユーザーは、行が DB に残っていても、ログイン(`validateUser`。パスワード照合後に
+  照合失敗と同じエラーで拒否)・HTTP の認証(`JwtStrategy`)・ブラウザ端末(`terminal.gateway.ts`)のすべてで拒否する
 - MinIO のバケットには匿名アクセスを許可しない(compose の `minio-init` で `mc anonymous set none`)。
   ファイルは必ず backend 経由(所有者を確認したうえでストリーム配信)で返す
 - Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
   管理している(`storage.kawamonn.com` → frontend、`ssh.kawamonn.com` → SSH)。リポジトリの
   `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていない
 - モニタリング: `kawamonn-storage/monitoring/healthcheck.sh` が5分毎にcron実行。障害時はPM2再起動を
-  試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。これとは別に、外部(GitHub Actions)
-  から Cloudflare Tunnel の接続状態を確認する `.github/workflows/uptime.yml` が30分ごとに動く(Pi 本体や回線が止まった場合の検知用)
+  試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。Pi 本体や回線が
+  止まった場合は、Cloudflare の通知機能(トンネルの状態)でメールが届く
 - 未実装・既知のギャップ(ユーザーに正直に伝えること): ファイル共有機能(DBスキーマのみ先行)、
   TOTP二段階認証(依存パッケージのみ、未使用)、BullMQのファイル処理ジョブ(スタブのみ)
