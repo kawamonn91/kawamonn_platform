@@ -1,8 +1,18 @@
 name: 公開サービスの死活監視
 
 # Pi 上の healthcheck.sh(cron 5分毎)は、Pi 本体や回線が落ちると通知そのものを出せない。
-# それを補うため、GitHub のサーバー(外部)から公開 URL を定期的に確認する。
+# それを補うため、GitHub 側から Cloudflare Tunnel の接続状態を定期的に確認する。
+# Pi か回線が止まるとトンネルが切れて status が down になるので、それを失敗として検知する。
 # 失敗すると、GitHub からこのワークフローを最後に変更したアカウントへメール通知が届く。
+#
+# 公開 URL を直接取得する方式は使えない。Cloudflare のボット対策が GitHub のサーバー
+# (データセンターの IP)からのアクセスを 403 で遮断し、Pi まで届かないため。
+#
+# 必要な Secrets(リポジトリの Settings → Secrets and variables → Actions):
+#   CF_API_TOKEN  : Cloudflare の API トークン(権限は「アカウント → Cloudflare Tunnel → 読み取り」だけでよい)
+#   CF_ACCOUNT_ID : Cloudflare のアカウント ID
+#   CF_TUNNEL_ID  : 監視するトンネルの ID
+# 未設定の間は、失敗にせず「未設定」と表示して終わる。
 #
 # 注意: 公開リポジトリでは、60日間リポジトリに更新(push 等)が無いと、
 # スケジュール実行は GitHub によって自動で無効化される。Actions の画面から再有効化できる。
@@ -20,40 +30,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  check:
-    name: ${{ matrix.name }}
+  tunnel:
+    name: Cloudflare Tunnel の接続状態
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Kawamonn (画面)
-            url: https://storage.kawamonn.com/
-          - name: Kawamonn (API)
-            url: https://storage.kawamonn.com/api/v1
-          - name: T-tech Store
-            url: https://store.kawamonn.com/
-          - name: kawamonn-labs
-            url: https://labs.kawamonn.com/
-          - name: ハブページ (www)
-            url: https://www.kawamonn.com/
     steps:
-      # 自宅回線(SoftBank Air)経由のため応答に数秒〜十数秒かかることがある。
-      # 夜間の再起動や一時的な瞬断で誤報を出さないよう、1分おきに最大3回まで試す。
-      - name: Check ${{ matrix.url }}
+      # 一時的な瞬断や API の不調で誤報を出さないよう、1分おきに最大3回まで確認する。
+      # healthy(全接続が正常)と degraded(一部の接続のみ切断、配信は継続)は稼働中とみなす。
+      - name: Check tunnel status
         env:
-          NAME: ${{ matrix.name }}
-          URL: ${{ matrix.url }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_TUNNEL_ID: ${{ secrets.CF_TUNNEL_ID }}
         run: |
-          code=000
+          if [ -z "$CF_API_TOKEN" ] || [ -z "$CF_ACCOUNT_ID" ] || [ -z "$CF_TUNNEL_ID" ]; then
+            echo "::notice title=死活監視は未設定です::Secrets(CF_API_TOKEN / CF_ACCOUNT_ID / CF_TUNNEL_ID)を登録すると監視が始まります"
+            echo "死活監視は未設定です。uptime.yml 冒頭のコメントにある Secrets を登録してください。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          status=unknown
           for i in 1 2 3; do
-            code=$(curl -sS -o /dev/null --max-time 30 -A 'kawamonn-uptime-check (GitHub Actions)' -w '%{http_code}' "$URL") || code=000
-            echo "試行 $i: HTTP $code"
-            if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
-              exit 0
-            fi
+            body=$(curl -sS --max-time 30 -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${CF_TUNNEL_ID}") || body=''
+            status=$(printf '%s' "$body" | jq -r 'if .success then .result.status else "api-error" end' 2>/dev/null) || status=api-error
+            echo "試行 $i: $status"
+            case "$status" in
+              healthy) exit 0 ;;
+              degraded)
+                echo "::warning title=トンネルの一部の接続が切れています::配信は続いていますが、回線が不安定な可能性があります"
+                exit 0 ;;
+            esac
             [ "$i" -lt 3 ] && sleep 60
           done
-          echo "::error title=${NAME} が応答しません::${URL} (最後の HTTP ステータス: ${code})"
+          if [ "$status" = "api-error" ]; then
+            echo "::error title=Cloudflare API の呼び出しに失敗しました::API トークンの権限・期限や、アカウント ID・トンネル ID を確認してください"
+          else
+            echo "::error title=Cloudflare Tunnel が停止しています::status=${status}。Pi 本体・回線・cloudflared コンテナを確認してください"
+          fi
           exit 1

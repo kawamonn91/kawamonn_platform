@@ -50,7 +50,10 @@ e2e テストの手順と注意点は [backend の README](kawamonn-storage/kawa
   - backend: lint・ユニットテスト・e2e テスト(使い捨ての PostgreSQL / Redis / MinIO を起動)・ビルド
   - frontend: lint・テスト・ビルド
   - infra: シェルスクリプトの ShellCheck、Docker Compose ファイルの検証
-- **死活監視**(`.github/workflows/uptime.yml`): 30分ごとに GitHub 側から公開 URL を確認し、
-  応答が無ければ失敗としてメールで通知します。サーバー内のヘルスチェックが動けない障害
-  (本体や回線の停止)を検知するためのものです。
+- **死活監視**(`.github/workflows/uptime.yml`): 30分ごとに GitHub 側から Cloudflare API で
+  トンネルの接続状態を確認し、停止していれば失敗としてメールで通知します。サーバー内のヘルスチェックが
+  動けない障害(本体や回線の停止)を検知するためのものです。公開 URL を直接取得する方式は、
+  Cloudflare のボット対策で GitHub からのアクセスが遮断されるため使っていません。
+  使うには、リポジトリの Secrets に `CF_API_TOKEN`(Cloudflare Tunnel の読み取り権限だけを持つトークン)、
+  `CF_ACCOUNT_ID`、`CF_TUNNEL_ID` を登録します(未登録の間は何もせずに終わります)。
   公開リポジトリでは 60 日間更新が無いとスケジュール実行が自動で止まるので、その場合は Actions の画面から再有効化してください。

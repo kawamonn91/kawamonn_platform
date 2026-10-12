@@ -31,8 +31,10 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   3ジョブが走る。lint は backend・frontend とも実gate(0件維持)で、backend は `npm run lint:check`(自動修正なし)で判定する。
   infra ジョブはシェルスクリプトの ShellCheck(`-S warning`)と Docker Compose ファイルの検証。
   依存は `npm ci` で入れるので、`package.json` を変えたら `package-lock.json` も必ず一緒にコミットする
-- **死活監視**: `.github/workflows/uptime.yml` が30分ごとに GitHub 側から公開 URL
-  (Kawamonn の画面と API・store・labs・www)を確認し、失敗するとメールが届く。
+- **死活監視**: `.github/workflows/uptime.yml` が30分ごとに GitHub 側から Cloudflare API でトンネルの接続状態を
+  確認し、停止(down)ならメールが届く。Secrets(`CF_API_TOKEN`・`CF_ACCOUNT_ID`・`CF_TUNNEL_ID`)が未登録の間は
+  何もせず成功で終わる。**公開 URL を GitHub から直接取得する方式は使えない**(Cloudflare のボット対策が
+  データセンターの IP を 403 で遮断し、Pi まで届かない。2026-10-12 に確認)。
   公開リポジトリは60日間 push が無いとスケジュール実行が自動で止まるので、止まっていたら Actions の画面から再有効化する
 - **デプロイ**: PM2(`kawamonn-storage/ecosystem.config.js`)、Docker Compose(Postgres/Redis/MinIO/cloudflared)、
   Cloudflare Tunnel(ポート開放なし)
@@ -128,6 +130,6 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていない
 - モニタリング: `kawamonn-storage/monitoring/healthcheck.sh` が5分毎にcron実行。障害時はPM2再起動を
   試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。これとは別に、外部(GitHub Actions)
-  からの死活監視 `.github/workflows/uptime.yml` が30分ごとに動く(Pi 本体や回線が止まった場合の検知用)
+  から Cloudflare Tunnel の接続状態を確認する `.github/workflows/uptime.yml` が30分ごとに動く(Pi 本体や回線が止まった場合の検知用)
 - 未実装・既知のギャップ(ユーザーに正直に伝えること): ファイル共有機能(DBスキーマのみ先行)、
   TOTP二段階認証(依存パッケージのみ、未使用)、BullMQのファイル処理ジョブ(スタブのみ)
