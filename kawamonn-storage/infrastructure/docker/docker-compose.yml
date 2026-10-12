@@ -57,8 +57,8 @@ services:
       /bin/sh -c "
       sleep 5;
       mc alias set kawamonn http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
-      mc mb kawamonn/storage-bucket;
-      mc anonymous set public kawamonn/storage-bucket;
+      mc mb --ignore-existing kawamonn/storage-bucket;
+      mc anonymous set none kawamonn/storage-bucket;
       exit 0;
       "
     networks:
