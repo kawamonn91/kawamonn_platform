@@ -4,17 +4,24 @@ on:
   push:
     branches: [main]
     paths:
-      - 'kawamonn-storage/kawamonn-storage-backend/**'
-      - 'kawamonn-storage/kawamonn-storage-frontend/**'
+      - 'kawamonn-storage/**'
       - '.github/workflows/ci.yml'
   pull_request:
     paths:
-      - 'kawamonn-storage/kawamonn-storage-backend/**'
-      - 'kawamonn-storage/kawamonn-storage-frontend/**'
+      - 'kawamonn-storage/**'
       - '.github/workflows/ci.yml'
+
+# 同じブランチで新しい push があったら、古い実行は取り消す
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   backend:
+    name: Backend (lint / unit / e2e / build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,15 +29,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 本番(PM2)と同じ Node.js のバージョンでテストする
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: kawamonn-storage/kawamonn-storage-backend/package-lock.json
 
-      # All @nestjs/* packages are now aligned on v11, which requires
-      # Node >= 20 — matches the node-version above. --legacy-peer-deps is
-      # no longer needed now that the peer ranges actually agree.
+      # package-lock.json どおりに入れる(npm install と違い、ロックファイルとの不一致を失敗として検出できる)
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      # 自動修正なしで ESLint + Prettier を実行し、1件でもあれば失敗させる
+      - name: Lint
+        run: npm run lint:check
 
       # Reuses the project's own docker-compose.test.yml — the exact same
       # throwaway Postgres/Redis/MinIO used for local `npm run test:e2e`,
@@ -76,6 +88,7 @@ jobs:
         run: docker compose -f docker-compose.test.yml down
 
   frontend:
+    name: Frontend (lint / test / build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -83,12 +96,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 本番で vite preview を動かしている Node.js と同じバージョン
       - uses: actions/setup-node@v4
         with:
-          node-version: '18.20.8'
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: kawamonn-storage/kawamonn-storage-frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
@@ -98,3 +114,32 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  infra:
+    name: Infra (shell scripts / docker compose)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kawamonn-storage
+    steps:
+      - uses: actions/checkout@v4
+
+      # ヘルスチェック(cron)・ユーザー作成/削除スクリプトなど、本番で root や cron から
+      # 実行されるシェルスクリプトの誤りを、warning 以上で検出する
+      - name: ShellCheck
+        run: shellcheck --version && git ls-files '*.sh' | xargs shellcheck -S warning
+
+      # 本番用 docker-compose.yml の構文と値の展開を検証する(秘密情報はダミー値)
+      - name: Validate production docker-compose.yml
+        working-directory: kawamonn-storage/infrastructure/docker
+        env:
+          POSTGRES_PASSWORD: dummy
+          MINIO_ROOT_USER: dummy
+          MINIO_ROOT_PASSWORD: dummy-password
+          CLOUDFLARE_TUNNEL_TOKEN: dummy
+        run: docker compose -f docker-compose.yml config --quiet
+
+      # バックエンドのテスト用 compose も同様に検証する
+      - name: Validate docker-compose.test.yml
+        working-directory: kawamonn-storage/kawamonn-storage-backend
+        run: docker compose -f docker-compose.test.yml config --quiet

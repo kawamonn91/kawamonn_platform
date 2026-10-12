@@ -1,0 +1,59 @@
+name: 公開サービスの死活監視
+
+# Pi 上の healthcheck.sh(cron 5分毎)は、Pi 本体や回線が落ちると通知そのものを出せない。
+# それを補うため、GitHub のサーバー(外部)から公開 URL を定期的に確認する。
+# 失敗すると、GitHub からこのワークフローを最後に変更したアカウントへメール通知が届く。
+#
+# 注意: 公開リポジトリでは、60日間リポジトリに更新(push 等)が無いと、
+# スケジュール実行は GitHub によって自動で無効化される。Actions の画面から再有効化できる。
+
+on:
+  schedule:
+    - cron: '11,41 * * * *' # 30分ごと(混雑しやすい毎時0分を避ける)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Kawamonn (画面)
+            url: https://storage.kawamonn.com/
+          - name: Kawamonn (API)
+            url: https://storage.kawamonn.com/api/v1
+          - name: T-tech Store
+            url: https://store.kawamonn.com/
+          - name: kawamonn-labs
+            url: https://labs.kawamonn.com/
+          - name: ハブページ (www)
+            url: https://www.kawamonn.com/
+    steps:
+      # 自宅回線(SoftBank Air)経由のため応答に数秒〜十数秒かかることがある。
+      # 夜間の再起動や一時的な瞬断で誤報を出さないよう、1分おきに最大3回まで試す。
+      - name: Check ${{ matrix.url }}
+        env:
+          NAME: ${{ matrix.name }}
+          URL: ${{ matrix.url }}
+        run: |
+          code=000
+          for i in 1 2 3; do
+            code=$(curl -sS -o /dev/null --max-time 30 -A 'kawamonn-uptime-check (GitHub Actions)' -w '%{http_code}' "$URL") || code=000
+            echo "試行 $i: HTTP $code"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 400 ]; then
+              exit 0
+            fi
+            [ "$i" -lt 3 ] && sleep 60
+          done
+          echo "::error title=${NAME} が応答しません::${URL} (最後の HTTP ステータス: ${code})"
+          exit 1
