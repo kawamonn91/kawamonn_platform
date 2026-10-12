@@ -7,4 +7,6 @@ import * as path from 'path';
 // setupFile is the only hook that runs early enough to do that (see
 // filebrowser.service.spec.ts for why that suite needs a real filesystem
 // instead of a mocked one). Harmless no-op for every other spec.
-process.env.SSH_BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'kawamonn-ssh-base-'));
+process.env.SSH_BASE = fs.mkdtempSync(
+  path.join(os.tmpdir(), 'kawamonn-ssh-base-'),
+);

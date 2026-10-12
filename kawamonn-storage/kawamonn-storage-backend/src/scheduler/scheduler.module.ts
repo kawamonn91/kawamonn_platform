@@ -4,7 +4,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { UsersModule } from '../users/users.module';
 
 @Module({
-    imports: [PrismaModule, UsersModule],
-    providers: [SchedulerService],
+  imports: [PrismaModule, UsersModule],
+  providers: [SchedulerService],
 })
 export class SchedulerModule {}

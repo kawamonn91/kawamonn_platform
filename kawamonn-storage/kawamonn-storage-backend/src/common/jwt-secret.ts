@@ -5,11 +5,11 @@
  * instead of silently signing/verifying tokens with a guessable default.
  */
 export function getJwtSecret(): string {
-    const secret = process.env.JWT_SECRET;
-    if (!secret || secret.length < 16) {
-        throw new Error(
-            'JWT_SECRET environment variable must be set to a random string of at least 16 characters.',
-        );
-    }
-    return secret;
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 16) {
+    throw new Error(
+      'JWT_SECRET environment variable must be set to a random string of at least 16 characters.',
+    );
+  }
+  return secret;
 }

@@ -8,15 +8,15 @@
  * end up serving that directory (including this app's own source and .env) to that account.
  */
 export const RESERVED_ACCOUNT_NAMES = new Set([
-    'kawamonn-storage',
-    'users',
-    'archives',
-    'admin',
-    'administrator',
-    'root',
-    'ssh',
+  'kawamonn-storage',
+  'users',
+  'archives',
+  'admin',
+  'administrator',
+  'root',
+  'ssh',
 ]);
 
 export function isReservedAccountName(accountName: string): boolean {
-    return RESERVED_ACCOUNT_NAMES.has(accountName.trim().toLowerCase());
+  return RESERVED_ACCOUNT_NAMES.has(accountName.trim().toLowerCase());
 }

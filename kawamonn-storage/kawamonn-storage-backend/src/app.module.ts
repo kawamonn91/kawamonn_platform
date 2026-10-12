@@ -21,7 +21,13 @@ import { join } from 'path';
 @Module({
   imports: [
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', '..', 'kawamonn-storage-frontend', 'dist'),
+      rootPath: join(
+        __dirname,
+        '..',
+        '..',
+        'kawamonn-storage-frontend',
+        'dist',
+      ),
       // Express 5 (bundled by @nestjs/platform-express v11) uses path-to-regexp v8,
       // which dropped support for the old unnamed-regex-group wildcard syntax
       // ('/api/(.*)'); {*splat} is the new equivalent that also matches the bare '/api' path.
@@ -30,13 +36,13 @@ import { join } from 'path';
     ThrottlerModule.forRoot([
       {
         name: 'default',
-        ttl: 60000,  // 1分
-        limit: 60,   // 1分あたり60リクエスト
+        ttl: 60000, // 1分
+        limit: 60, // 1分あたり60リクエスト
       },
       {
         name: 'auth',
-        ttl: 60000,  // 1分
-        limit: 10,   // 認証系は厳しく: 1分あたり10リクエスト
+        ttl: 60000, // 1分
+        limit: 10, // 認証系は厳しく: 1分あたり10リクエスト
       },
     ]),
     BullModule.forRoot({
@@ -71,4 +77,4 @@ import { join } from 'path';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

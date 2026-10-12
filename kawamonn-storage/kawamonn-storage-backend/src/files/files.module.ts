@@ -11,6 +11,6 @@ import { FilesProcessor } from './files.processor';
     }),
   ],
   controllers: [FilesController],
-  providers: [FilesService, FilesProcessor]
+  providers: [FilesService, FilesProcessor],
 })
-export class FilesModule { }
+export class FilesModule {}

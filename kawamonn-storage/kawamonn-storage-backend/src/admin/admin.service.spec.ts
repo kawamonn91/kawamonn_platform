@@ -8,7 +8,13 @@ jest.mock('nodemailer', () => ({
 }));
 
 const mockPrisma = {
-  user: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn(), delete: jest.fn() },
+  user: {
+    findMany: jest.fn(),
+    count: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
   auditLog: { create: jest.fn() },
 };
 

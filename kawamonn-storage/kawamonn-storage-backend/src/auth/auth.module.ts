@@ -20,4 +20,4 @@ import { getJwtSecret } from '../common/jwt-secret';
   controllers: [AuthController],
   exports: [AuthService],
 })
-export class AuthModule { }
+export class AuthModule {}

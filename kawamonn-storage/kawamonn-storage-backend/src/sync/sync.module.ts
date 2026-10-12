@@ -4,8 +4,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 
 @Global()
 @Module({
-    imports: [PrismaModule],
-    providers: [SyncService],
-    exports: [SyncService],
+  imports: [PrismaModule],
+  providers: [SyncService],
+  exports: [SyncService],
 })
 export class SyncModule {}

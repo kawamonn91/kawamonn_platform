@@ -29,7 +29,10 @@ describe('UsersService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [UsersService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        UsersService,
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
@@ -48,7 +51,8 @@ describe('UsersService', () => {
 
       await service.deprovisionUser('alice');
 
-      const dockerInstance = (Docker as unknown as jest.Mock).mock.results[0].value;
+      const dockerInstance = (Docker as unknown as jest.Mock).mock.results[0]
+        .value;
       expect(dockerInstance.getContainer).toHaveBeenCalledWith('container-1');
       expect(dockerInstance.getContainer).toHaveBeenCalledWith('container-2');
       expect(dockerInstance.getContainer).toHaveBeenCalledTimes(2);
@@ -60,11 +64,14 @@ describe('UsersService', () => {
     });
 
     it('skips containers with no container_id', async () => {
-      mockPrisma.sshContainer.findMany.mockResolvedValue([{ container_id: null }]);
+      mockPrisma.sshContainer.findMany.mockResolvedValue([
+        { container_id: null },
+      ]);
 
       await service.deprovisionUser('alice');
 
-      const dockerInstance = (Docker as unknown as jest.Mock).mock.results[0].value;
+      const dockerInstance = (Docker as unknown as jest.Mock).mock.results[0]
+        .value;
       expect(dockerInstance.getContainer).not.toHaveBeenCalled();
     });
 

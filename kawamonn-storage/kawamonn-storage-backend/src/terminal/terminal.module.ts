@@ -5,13 +5,13 @@ import { SshModule } from '../ssh/ssh.module';
 import { getJwtSecret } from '../common/jwt-secret';
 
 @Module({
-    imports: [
-        SshModule,
-        JwtModule.register({
-            secret: getJwtSecret(),
-            signOptions: { expiresIn: '7d' },
-        }),
-    ],
-    providers: [TerminalGateway],
+  imports: [
+    SshModule,
+    JwtModule.register({
+      secret: getJwtSecret(),
+      signOptions: { expiresIn: '7d' },
+    }),
+  ],
+  providers: [TerminalGateway],
 })
 export class TerminalModule {}

@@ -14,7 +14,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
  * without touching the real OS.
  */
 jest.mock('child_process', () => ({
-    execFileSync: jest.fn(),
+  execFileSync: jest.fn(),
 }));
 
 // AuthService.sendOtp() genuinely awaits transporter.sendMail() with no
@@ -22,7 +22,9 @@ jest.mock('child_process', () => ({
 // but .env.test's SMTP_HOST points at a throwaway address nothing listens on,
 // so this must be mocked or every send-otp call would fail with ECONNREFUSED.
 jest.mock('nodemailer', () => ({
-    createTransport: jest.fn().mockReturnValue({ sendMail: jest.fn().mockResolvedValue(undefined) }),
+  createTransport: jest
+    .fn()
+    .mockReturnValue({ sendMail: jest.fn().mockResolvedValue(undefined) }),
 }));
 
 /**
@@ -34,85 +36,101 @@ jest.mock('nodemailer', () => ({
  * to what auth endpoints need. Scoping the module keeps this suite fast.
  */
 describe('Auth (e2e)', () => {
-    let app: INestApplication;
-    let prisma: PrismaService;
+  let app: INestApplication;
+  let prisma: PrismaService;
 
-    beforeAll(async () => {
-        const moduleRef: TestingModule = await Test.createTestingModule({
-            imports: [PrismaModule, AuthModule],
-        }).compile();
+  beforeAll(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [PrismaModule, AuthModule],
+    }).compile();
 
-        app = moduleRef.createNestApplication();
-        app.setGlobalPrefix('api/v1');
-        app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-        await app.init();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
+    await app.init();
 
-        prisma = moduleRef.get(PrismaService);
+    prisma = moduleRef.get(PrismaService);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    await prisma.user.deleteMany({});
+    await prisma.otpCode.deleteMany({});
+  });
+
+  describe('POST /auth/send-otp -> register flow', () => {
+    it('rejects a non @u-aizu.ac.jp email', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/send-otp')
+        .send({ email: 'someone@gmail.com' });
+      expect(res.status).toBe(400);
     });
 
-    afterAll(async () => {
-        await app.close();
+    it('completes registration end-to-end with a real OTP round trip', async () => {
+      const email = `e2e-${Date.now()}@u-aizu.ac.jp`;
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/send-otp')
+        .send({ email })
+        .expect(200);
+
+      const otp = await prisma.otpCode.findFirst({
+        where: { email },
+        orderBy: { created_at: 'desc' },
+      });
+      expect(otp).not.toBeNull();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({
+          email,
+          password: 'a valid password!',
+          display_name: `e2euser${Date.now()}`,
+          otp_code: otp!.code,
+        })
+        .expect(201);
+
+      expect(res.body.status).toMatch(/Registered successfully/);
+
+      const created = await prisma.user.findUnique({ where: { email } });
+      expect(created).not.toBeNull();
     });
 
-    beforeEach(async () => {
-        await prisma.user.deleteMany({});
-        await prisma.otpCode.deleteMany({});
-    });
+    it('rejects a reserved account name through the real HTTP + DTO + service stack', async () => {
+      const email = `e2e-reserved-${Date.now()}@u-aizu.ac.jp`;
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/send-otp')
+        .send({ email })
+        .expect(200);
+      const otp = await prisma.otpCode.findFirst({
+        where: { email },
+        orderBy: { created_at: 'desc' },
+      });
 
-    describe('POST /auth/send-otp -> register flow', () => {
-        it('rejects a non @u-aizu.ac.jp email', async () => {
-            const res = await request(app.getHttpServer())
-                .post('/api/v1/auth/send-otp')
-                .send({ email: 'someone@gmail.com' });
-            expect(res.status).toBe(400);
+      const res = await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({
+          email,
+          password: 'a valid password!',
+          display_name: 'admin',
+          otp_code: otp!.code,
         });
 
-        it('completes registration end-to-end with a real OTP round trip', async () => {
-            const email = `e2e-${Date.now()}@u-aizu.ac.jp`;
-
-            await request(app.getHttpServer())
-                .post('/api/v1/auth/send-otp')
-                .send({ email })
-                .expect(200);
-
-            const otp = await prisma.otpCode.findFirst({ where: { email }, orderBy: { created_at: 'desc' } });
-            expect(otp).not.toBeNull();
-
-            const res = await request(app.getHttpServer())
-                .post('/api/v1/auth/register')
-                .send({
-                    email,
-                    password: 'a valid password!',
-                    display_name: `e2euser${Date.now()}`,
-                    otp_code: otp!.code,
-                })
-                .expect(201);
-
-            expect(res.body.status).toMatch(/Registered successfully/);
-
-            const created = await prisma.user.findUnique({ where: { email } });
-            expect(created).not.toBeNull();
-        });
-
-        it('rejects a reserved account name through the real HTTP + DTO + service stack', async () => {
-            const email = `e2e-reserved-${Date.now()}@u-aizu.ac.jp`;
-            await request(app.getHttpServer()).post('/api/v1/auth/send-otp').send({ email }).expect(200);
-            const otp = await prisma.otpCode.findFirst({ where: { email }, orderBy: { created_at: 'desc' } });
-
-            const res = await request(app.getHttpServer())
-                .post('/api/v1/auth/register')
-                .send({ email, password: 'a valid password!', display_name: 'admin', otp_code: otp!.code });
-
-            expect(res.status).toBe(409);
-        });
+      expect(res.status).toBe(409);
     });
+  });
 
-    describe('POST /auth/login', () => {
-        it('returns 401 for a nonexistent account', async () => {
-            await request(app.getHttpServer())
-                .post('/api/v1/auth/login')
-                .send({ account_name: 'nonexistent', password: 'whatever' })
-                .expect(401);
-        });
+  describe('POST /auth/login', () => {
+    it('returns 401 for a nonexistent account', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ account_name: 'nonexistent', password: 'whatever' })
+        .expect(401);
     });
+  });
 });
