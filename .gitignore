@@ -62,3 +62,11 @@ Thumbs.db
 /toya/
 /admin_kawamonn/
 /myproject/
+
+# kawamonn-labs is its own independent git repository, not tracked here.
+/kawamonn-labs/
+
+# 過去のソース一式のスナップショット(古く不正確な運用資料を含む)。公開リポジトリには載せない
+/Kawamonn_Project.zip
+# 内部構成(トンネル・VPN・ホストのパス等)を含む手元用の解説資料。公開リポジトリには載せない
+/kawamonn-storage/技術解説資料.html
