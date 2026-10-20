@@ -48,6 +48,8 @@ describe('SshService', () => {
       expect(opts.HostConfig.PortBindings['22/tcp']).toEqual([
         { HostIp: '127.0.0.1', HostPort: '0' },
       ]);
+      // コンテナの起動時に、backend の UID へホームの読み書きを許可させる(entrypoint.sh)
+      expect(opts.Env).toContain(`BACKEND_UID=${process.getuid!()}`);
     } finally {
       existsSpy.mockRestore();
     }

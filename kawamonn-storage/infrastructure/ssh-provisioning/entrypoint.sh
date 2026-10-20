@@ -39,6 +39,17 @@ fi
 # ホームディレクトリの所有権を確保
 chown -R "$USER_UID:$USER_UID" "/home/$USERNAME" 2>/dev/null || true
 
+# backend(ホストで動く Web のストレージ画面)も、このホームを読み書きできるようにする。
+# 所有者は上で USER_UID に付け直すので、backend の UID(BACKEND_UID、ホストの pi)には ACL で許可を与える。
+# 新しく作るファイルやフォルダにも引き継ぐよう、default ACL も付ける。コンテナの利用者(USER_UID)にも
+# 付けておくと、backend が Web から作ったフォルダにも、端末から入れる。
+# -P: 中のシンボリックリンクはたどらない(コンテナの中なので、たどってもホストには届かない)
+BACKEND_UID=${BACKEND_UID:-1000}
+if command -v setfacl > /dev/null 2>&1; then
+    setfacl -R -P -m "u:${BACKEND_UID}:rwX,d:u:${BACKEND_UID}:rwX,u:${USER_UID}:rwX,d:u:${USER_UID}:rwX" \
+        "/home/$USERNAME" 2>/dev/null || true
+fi
+
 # SSHdの設定: rootログイン禁止・パスワード認証禁止
 sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config

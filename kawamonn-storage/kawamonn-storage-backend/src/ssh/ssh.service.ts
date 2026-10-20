@@ -51,7 +51,12 @@ export class SshService {
           PortBindings: { '22/tcp': [{ HostIp: '127.0.0.1', HostPort: '0' }] },
           RestartPolicy: { Name: 'unless-stopped' },
         },
-        Env: [`USERNAME=${username}`, `PUBLIC_KEY=${publicKey}`],
+        Env: [
+          `USERNAME=${username}`,
+          `PUBLIC_KEY=${publicKey}`,
+          // コンテナの起動時に、この UID(backend)へホームの読み書きを許可する ACL を付ける(entrypoint.sh)
+          `BACKEND_UID=${process.getuid?.() ?? 1000}`,
+        ],
       });
 
       await container.start();
