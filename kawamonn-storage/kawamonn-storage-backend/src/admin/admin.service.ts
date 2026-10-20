@@ -8,7 +8,6 @@ import { UsersService } from '../users/users.service';
 import * as nodemailer from 'nodemailer';
 import * as bcrypt from 'bcrypt';
 import { generateTempPassword } from '../common/random-password';
-import { execFileSync } from 'child_process';
 
 @Injectable()
 export class AdminService {
@@ -98,7 +97,6 @@ export class AdminService {
         status: true,
         quota_bytes: true,
         used_bytes: true,
-        fs_project_id: true,
         expiry_at: true,
         last_reminder_sent: true,
         password_last_set_at: true,
@@ -174,15 +172,6 @@ export class AdminService {
       },
     });
 
-    // Sync password to host OS
-    try {
-      execFileSync('sudo', ['chpasswd'], {
-        input: `${user.account_name}:${tempPassword}\n`,
-      });
-    } catch (e) {
-      console.warn('Host user password sync failed:', e.message);
-    }
-
     // Audit log
     await this.prisma.auditLog.create({
       data: {
@@ -213,19 +202,6 @@ export class AdminService {
       where: { id },
       data: { quota_bytes: quotaBytes },
     });
-
-    // Update OS-level ext4 project quota if fs_project_id exists
-    if (user.fs_project_id) {
-      try {
-        execFileSync('sudo', [
-          '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/update_quota.sh',
-          String(user.fs_project_id),
-          String(quotaBytes),
-        ]);
-      } catch (e) {
-        console.warn('OS quota update failed (non-critical):', e.message);
-      }
-    }
 
     // Audit log
     await this.prisma.auditLog.create({

@@ -45,10 +45,8 @@ export class SshService {
           CpuQuota: 50000, // 50% CPU
           CpuPeriod: 100000,
           Binds: [`${hostMountPath}:/home/${username}:rw`],
-          // ブラウザ端末もSSHゲートウェイも docker exec 経由で接続するため、
-          // コンテナの 22 番を LAN(0.0.0.0) に公開する必要はない。ループバックのみに
-          // バインドし、同一ホスト外からコンテナへ直接到達できないようにする。
-          PortBindings: { '22/tcp': [{ HostIp: '127.0.0.1', HostPort: '0' }] },
+          // ブラウザの端末は docker exec で接続するので、コンテナのポートはどこにも公開しない
+          // (2026-10 に SSH 接続の入口を廃止した。以前は 22 番を 127.0.0.1 に公開していた)
           RestartPolicy: { Name: 'unless-stopped' },
         },
         Env: [
@@ -97,9 +95,6 @@ export class SshService {
 
       return {
         container_status: data.State.Status,
-        ssh_port: data.NetworkSettings.Ports['22/tcp']
-          ? data.NetworkSettings.Ports['22/tcp'][0].HostPort
-          : null,
         resource_usage: {
           cpu_limit: dbContainer.cpu_limit,
           memory_limit: dbContainer.memory_limit,

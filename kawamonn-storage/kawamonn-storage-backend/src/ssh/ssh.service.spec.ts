@@ -31,7 +31,7 @@ describe('SshService', () => {
     expect(service).toBeDefined();
   });
 
-  it('provisionContainer はコンテナの 22 番をループバック(127.0.0.1)にだけ公開する', async () => {
+  it('provisionContainer はコンテナのポートを公開せず、backend の UID を渡す', async () => {
     // ホストの実ディレクトリを作らないよう、存在チェックを常に true にする
     const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
     try {
@@ -45,9 +45,7 @@ describe('SshService', () => {
       await service.provisionContainer('alice');
 
       const opts = docker.createContainer.mock.calls[0][0];
-      expect(opts.HostConfig.PortBindings['22/tcp']).toEqual([
-        { HostIp: '127.0.0.1', HostPort: '0' },
-      ]);
+      expect(opts.HostConfig.PortBindings).toBeUndefined();
       // コンテナの起動時に、backend の UID へホームの読み書きを許可させる(entrypoint.sh)
       expect(opts.Env).toContain(`BACKEND_UID=${process.getuid!()}`);
     } finally {

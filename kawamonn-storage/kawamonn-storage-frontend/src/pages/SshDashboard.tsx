@@ -26,7 +26,6 @@ type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error
 
 interface SshStatus {
     container_status: string;
-    ssh_port: string | null;
     resource_usage: { cpu_limit: string; memory_limit: string };
 }
 

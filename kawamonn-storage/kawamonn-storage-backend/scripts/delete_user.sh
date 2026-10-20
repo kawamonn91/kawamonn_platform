@@ -3,6 +3,10 @@ set -e
 
 # Usage: ./delete_user.sh <username> <action>
 # action: 'delete' or 'archive'
+#
+# 利用者フォルダ(/home/pi/hdd/ssh/users/<username>)を消す。archive なら先に
+# /home/pi/hdd/ssh/archives/<username>_<日付>.tar.gz に保管する。
+# 利用者のホストの OS アカウントは 2026-10 に廃止した(SSH 接続の入口をやめた)ので、ここでは扱わない。
 USERNAME=$1
 ACTION=$2
 BASE_DIR="/home/pi/hdd/ssh/users"
@@ -13,17 +17,15 @@ if [ -z "$USERNAME" ] || [ -z "$ACTION" ]; then
     echo "Usage: $0 <username> <delete|archive>"
     exit 1
 fi
-
-# Revoke OS-level access first and unconditionally, regardless of whether the
-# storage directory below still exists. Without this, a deleted/expired user
-# keeps their SSH login and group memberships indefinitely.
-if id "$USERNAME" &>/dev/null; then
-    pkill -u "$USERNAME" 2>/dev/null || true
-    userdel -r "$USERNAME" 2>/dev/null || userdel "$USERNAME" 2>/dev/null || true
+# root で rm -rf するので、利用者名の規則(src/common/account-name.ts と同じ)に合わない名前は扱わない
+if ! [[ "$USERNAME" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$ ]]; then
+    echo "Invalid username: $USERNAME"
+    exit 1
 fi
-for grp in docker kawamonn-users; do
-    gpasswd -d "$USERNAME" "$grp" 2>/dev/null || true
-done
+if [ "$ACTION" != "archive" ] && [ "$ACTION" != "delete" ]; then
+    echo "Invalid action: $ACTION"
+    exit 1
+fi
 
 if [ ! -d "$USER_DIR" ]; then
     echo "User directory not found: $USER_DIR"

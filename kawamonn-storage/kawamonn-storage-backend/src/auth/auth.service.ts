@@ -15,7 +15,6 @@ import * as bcrypt from 'bcrypt';
 import * as argon2 from 'argon2';
 import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
-import { execFileSync } from 'child_process';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { isReservedAccountName } from '../common/reserved-names';
@@ -152,7 +151,6 @@ export class AuthService {
 
     // === SERIALIZABLE Transaction ===
     // All DB reads and writes are atomic to prevent race conditions on:
-    //   - fs_project_id (MAX+1 pattern)
     //   - account_name uniqueness
     //   - email uniqueness
     let newUser: any;
@@ -177,13 +175,6 @@ export class AuthService {
             );
           }
 
-          // Allocate fs_project_id atomically within the transaction
-          // Migrated from: Flask register app (project_id = 10000 + user_id)
-          const maxProjectId = await tx.user.aggregate({
-            _max: { fs_project_id: true },
-          });
-          const fsProjectId = (maxProjectId._max.fs_project_id ?? 9999) + 1;
-
           // Create user atomically
           return tx.user.create({
             data: {
@@ -192,7 +183,6 @@ export class AuthService {
               password_hash: hashedPassword,
               role: 'user',
               expiry_at: expiryAt,
-              fs_project_id: fsProjectId,
               password_last_set_at: new Date(),
             },
           });
@@ -220,12 +210,6 @@ export class AuthService {
         if (target.includes('account_name')) {
           throw new ConflictException('Account name already in use.');
         }
-        if (target.includes('fs_project_id')) {
-          // fs_project_id collision — retry would succeed but is complex; ask user to retry
-          throw new ConflictException(
-            'Registration conflict. Please try again.',
-          );
-        }
         throw new ConflictException('Registration conflict. Please try again.');
       }
       // Any other unexpected error
@@ -233,55 +217,9 @@ export class AuthService {
       throw error;
     }
 
-    // Sync to host for SSH access (AFTER successful DB transaction)
-    try {
-      // Create host user with gateway shell (use argument array to prevent command injection)
-      execFileSync('sudo', [
-        'useradd',
-        '-m',
-        '-s',
-        '/usr/local/bin/ssh-gateway.sh',
-        account_name,
-      ]);
-      execFileSync('sudo', ['usermod', '-aG', 'kawamonn-users', account_name]);
-      // NOTE: users are intentionally NOT added to the `docker` group. Docker group
-      // membership is root-equivalent (a member can bind-mount the host filesystem),
-      // so granting it to every self-registered user would defeat all sandboxing.
-      // The app itself manages each user's SSH container via SshService/dockerode,
-      // which runs under the backend process's own privileges, not the user's OS account.
-      // Set initial password via stdin (never via shell interpolation)
-      execFileSync('sudo', ['chpasswd'], {
-        input: `${account_name}:${registerDto.password}\n`,
-      });
-
-      // Create user directory and set ext4 project quota
-      // Migrated from: Flask register app (subprocess.check_call(['sudo', script_path, ...]))
-      execFileSync('sudo', [
-        '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/create_user_dir.sh',
-        account_name,
-        String(newUser.fs_project_id),
-        String(newUser.quota_bytes),
-      ]);
-    } catch (e) {
-      // OS-level user creation failed — roll back the DB user to prevent orphaned records
-      this.logger.error(
-        `OS user creation failed for ${account_name}, rolling back DB user`,
-        e,
-      );
-      try {
-        await this.prisma.user.delete({ where: { id: newUser.id } });
-      } catch (rollbackError) {
-        this.logger.error(
-          `DB rollback also failed for user ${newUser.id}`,
-          rollbackError,
-        );
-      }
-      throw new HttpException(
-        'Registration failed during system setup. Please try again.',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-
+    // ホストの OS アカウントは作らない(2026-10 に SSH 接続の入口を廃止し、端末はブラウザからだけにした)。
+    // 利用者フォルダは、ファイルブラウザか端末を初めて使うときに作られる。容量の上限は
+    // StorageUsageService が使用量を測って守る(ディスクの容量制限の機能は使わない)
     return {
       user_id: newUser.id,
       status: 'Registered successfully. Proceed to login.',
@@ -457,15 +395,6 @@ export class AuthService {
         data: { used: true },
       }),
     ]);
-
-    try {
-      // Use argument array to prevent command injection (never interpolate into shell strings)
-      execFileSync('sudo', ['chpasswd'], {
-        input: `${resetRecord.user.account_name}:${new_password}\n`,
-      });
-    } catch (e) {
-      console.warn('Host user password sync failed:', e.message);
-    }
 
     await this.prisma.auditLog.create({
       data: {

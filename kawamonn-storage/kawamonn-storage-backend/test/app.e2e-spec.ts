@@ -6,10 +6,8 @@ import { AppService } from '../src/app.service';
 
 /**
  * Deliberately does NOT import the full AppModule. AppController/AppService
- * have no real dependencies at all, but AppModule also wires up SyncModule
- * (whose SyncService starts a chokidar watcher over the real production
- * /home/pi/hdd/ssh tree on every boot — multi-minute slow on this machine and
- * entirely unrelated to this smoke test), Docker/dockerode, BullMQ, etc.
+ * have no real dependencies at all, but AppModule also wires up Docker/dockerode,
+ * the scheduler and other modules entirely unrelated to this smoke test.
  * Scoping the module to just what this route needs keeps the suite fast.
  */
 describe('AppController (e2e)', () => {

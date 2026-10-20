@@ -6,16 +6,17 @@ import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
- * AuthService.register() shells out to real `sudo useradd`/`chpasswd`/etc. to
- * provision an actual OS-level Linux account for the new user. That must
- * NEVER happen from an automated test run (it would create real accounts on
- * whatever machine runs this suite, local dev or CI). child_process is
- * mocked so the DB-level registration flow can be verified end-to-end
- * without touching the real OS.
+ * 登録はホストの OS アカウントを作らない(2026-10 に SSH 接続の入口を廃止した)。
+ * 万一 OS のコマンドを呼ぶ処理が戻っても本物のアカウントを作らないよう child_process は偽物に差し替え、
+ * 登録のテストで「一度も呼ばれない」ことを確かめる。
  */
 jest.mock('child_process', () => ({
+  ...jest.requireActual('child_process'),
   execFileSync: jest.fn(),
+  execSync: jest.fn(),
 }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const childProcess = require('child_process');
 
 // AuthService.sendOtp() genuinely awaits transporter.sendMail() with no
 // try/catch — against a real SMTP server this is desired end-to-end behavior,
@@ -29,11 +30,9 @@ jest.mock('nodemailer', () => ({
 
 /**
  * Deliberately composes a SMALL test module (Auth + Prisma only) instead of
- * importing the full AppModule. The real AppModule also wires up SyncModule,
- * whose SyncService starts a chokidar watcher over the real production
- * /home/pi/hdd/ssh tree on every boot — harmless in production, but very
- * slow (multi-minute) in a test run on this machine, and entirely unrelated
- * to what auth endpoints need. Scoping the module keeps this suite fast.
+ * importing the full AppModule, which also wires up the terminal (Docker),
+ * the scheduler and other modules unrelated to what auth endpoints need.
+ * Scoping the module keeps this suite fast and self-contained.
  */
 describe('Auth (e2e)', () => {
   let app: INestApplication;
@@ -99,6 +98,9 @@ describe('Auth (e2e)', () => {
 
       const created = await prisma.user.findUnique({ where: { email } });
       expect(created).not.toBeNull();
+      // ホストの OS アカウントの作成やスクリプトの実行(sudo)をしない
+      expect(childProcess.execFileSync).not.toHaveBeenCalled();
+      expect(childProcess.execSync).not.toHaveBeenCalled();
     });
 
     it('rejects a reserved account name through the real HTTP + DTO + service stack', async () => {
