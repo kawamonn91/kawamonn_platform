@@ -5,7 +5,6 @@ import {
   Delete,
   Body,
   UseGuards,
-  Request,
   BadRequestException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -13,6 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { UpdateMeDto } from './dto/update-me.dto';
 import * as argon2 from 'argon2';
 import * as bcrypt from 'bcrypt';
+import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -20,8 +20,8 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get('me')
-  async getMe(@Request() req) {
-    const user = await this.usersService.findOne({ id: req.user.id });
+  async getMe(@CurrentUser() me: AuthUser) {
+    const user = await this.usersService.findOne({ id: me.id });
     if (!user) throw new BadRequestException('User not found');
     return {
       id: user.id,
@@ -37,8 +37,8 @@ export class UsersController {
   }
 
   @Put('me')
-  async updateMe(@Request() req, @Body() body: UpdateMeDto) {
-    const user = await this.usersService.findOne({ id: req.user.id });
+  async updateMe(@CurrentUser() me: AuthUser, @Body() body: UpdateMeDto) {
+    const user = await this.usersService.findOne({ id: me.id });
     if (!user) throw new BadRequestException('User not found');
 
     const updates: any = {};
@@ -83,19 +83,19 @@ export class UsersController {
     }
 
     await this.usersService.updateUser({
-      where: { id: req.user.id },
+      where: { id: me.id },
       data: updates,
     });
     return { status: '更新しました' };
   }
 
   @Delete('me')
-  async deleteMe(@Request() req) {
-    const user = await this.usersService.findOne({ id: req.user.id });
+  async deleteMe(@CurrentUser() me: AuthUser) {
+    const user = await this.usersService.findOne({ id: me.id });
     if (!user) throw new BadRequestException('User not found');
 
     await this.usersService.deprovisionUser(user.account_name);
-    await this.usersService.deleteUser({ id: req.user.id });
+    await this.usersService.deleteUser({ id: me.id });
     return { status: 'アカウントを削除しました' };
   }
 }

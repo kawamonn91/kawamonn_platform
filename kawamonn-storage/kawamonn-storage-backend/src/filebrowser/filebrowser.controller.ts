@@ -7,7 +7,6 @@ import {
   Patch,
   Query,
   Body,
-  Req,
   Res,
   UseGuards,
   UseInterceptors,
@@ -17,7 +16,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { FileBrowserService } from './filebrowser.service';
-import { Response, Request } from 'express';
+import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
+import { Response } from 'express';
 
 @Controller('filebrowser')
 @UseGuards(JwtAuthGuard)
@@ -27,10 +27,10 @@ export class FileBrowserController {
   /** GET /api/v1/filebrowser/ls?path=/some/dir */
   @Get('ls')
   async listDir(
-    @Req() req: Request & { user: any },
+    @CurrentUser() me: AuthUser,
     @Query('path') relPath: string = '/',
   ) {
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     const entries = await this.fileBrowserService.listDir(username, relPath);
     return { path: relPath, entries };
   }
@@ -38,12 +38,12 @@ export class FileBrowserController {
   /** GET /api/v1/filebrowser/read?path=/some/file.txt */
   @Get('read')
   async readFile(
-    @Req() req: Request & { user: any },
+    @CurrentUser() me: AuthUser,
     @Query('path') relPath: string,
     @Res() res: Response,
   ) {
     if (!relPath) throw new BadRequestException('path is required');
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     const { buffer, mime, name } = await this.fileBrowserService.readFile(
       username,
       relPath,
@@ -65,12 +65,12 @@ export class FileBrowserController {
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   async uploadFile(
-    @Req() req: Request & { user: any },
+    @CurrentUser() me: AuthUser,
     @Query('path') dirPath: string = '/',
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('No file provided');
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     // Multer may parse non-ASCII filename as latin1
     const originalName = Buffer.from(file.originalname, 'latin1').toString(
       'utf8',
@@ -85,12 +85,9 @@ export class FileBrowserController {
 
   /** POST /api/v1/filebrowser/mkdir  body: { path: "/new/dir" } */
   @Post('mkdir')
-  async mkdir(
-    @Req() req: Request & { user: any },
-    @Body('path') relPath: string,
-  ) {
+  async mkdir(@CurrentUser() me: AuthUser, @Body('path') relPath: string) {
     if (!relPath) throw new BadRequestException('path is required');
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     await this.fileBrowserService.mkdir(username, relPath);
     return { success: true, path: relPath };
   }
@@ -102,12 +99,12 @@ export class FileBrowserController {
    */
   @Put('write-text')
   async writeText(
-    @Req() req: Request & { user: any },
+    @CurrentUser() me: AuthUser,
     @Body('path') relPath: string,
     @Body('content') content: string,
   ) {
     if (!relPath) throw new BadRequestException('path is required');
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     const buffer = Buffer.from(content ?? '', 'utf8');
     await this.fileBrowserService.writeFile(username, relPath, buffer);
     return { success: true, path: relPath };
@@ -116,11 +113,11 @@ export class FileBrowserController {
   /** DELETE /api/v1/filebrowser/delete?path=/some/file */
   @Delete('delete')
   async deleteItem(
-    @Req() req: Request & { user: any },
+    @CurrentUser() me: AuthUser,
     @Query('path') relPath: string,
   ) {
     if (!relPath) throw new BadRequestException('path is required');
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     await this.fileBrowserService.deleteItem(username, relPath);
     return { success: true };
   }
@@ -128,13 +125,13 @@ export class FileBrowserController {
   /** PATCH /api/v1/filebrowser/rename  body: { oldPath, newPath } */
   @Patch('rename')
   async rename(
-    @Req() req: Request & { user: any },
+    @CurrentUser() me: AuthUser,
     @Body('oldPath') oldPath: string,
     @Body('newPath') newPath: string,
   ) {
     if (!oldPath || !newPath)
       throw new BadRequestException('oldPath and newPath are required');
-    const username = req.user.account_name as string;
+    const username = me.account_name;
     await this.fileBrowserService.rename(username, oldPath, newPath);
     return { success: true };
   }
