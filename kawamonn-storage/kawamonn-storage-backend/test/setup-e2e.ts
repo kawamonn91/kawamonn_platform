@@ -45,21 +45,4 @@ module.exports = async function globalSetup() {
   } finally {
     await prisma.$disconnect();
   }
-
-  // Ensure the test MinIO bucket exists so files.e2e-spec.ts doesn't need a
-  // manual `mc mb` step on every fresh environment (local or CI).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Minio = require('minio');
-  const minioClient = new Minio.Client({
-    endPoint: process.env.MINIO_ENDPOINT,
-    port: Number(process.env.MINIO_PORT),
-    useSSL: false,
-    accessKey: process.env.MINIO_ACCESS_KEY,
-    secretKey: process.env.MINIO_SECRET_KEY,
-  });
-  const bucket = process.env.MINIO_BUCKET as string;
-  const exists = await minioClient.bucketExists(bucket).catch(() => false);
-  if (!exists) {
-    await minioClient.makeBucket(bucket);
-  }
 };

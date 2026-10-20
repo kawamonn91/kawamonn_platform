@@ -5,9 +5,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as Docker from 'dockerode';
-import * as path from 'path';
 import * as fs from 'fs';
 import { isValidAccountName } from '../common/account-name';
+import { userHomePath } from '../common/user-home';
 
 @Injectable()
 export class SshService {
@@ -29,10 +29,7 @@ export class SshService {
       where: { account_name: username },
       select: { role: true },
     });
-    const isMin = user && user.role === 'admin';
-    const hostMountPath = isMin
-      ? path.join('/home/pi/hdd/ssh', username)
-      : path.join('/home/pi/hdd/ssh/users', username);
+    const hostMountPath = userHomePath(username, user?.role === 'admin');
 
     if (!fs.existsSync(hostMountPath)) {
       fs.mkdirSync(hostMountPath, { recursive: true });

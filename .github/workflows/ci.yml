@@ -45,11 +45,11 @@ jobs:
         run: npm run lint:check
 
       # Reuses the project's own docker-compose.test.yml — the exact same
-      # throwaway Postgres/Redis/MinIO used for local `npm run test:e2e`,
+      # throwaway Postgres/Redis used for local `npm run test:e2e`,
       # so CI and local dev can never drift apart. (GitHub Actions' native
-      # `services:` block can't override MinIO's start command, which is why
+      # `services:` block can't express everything the compose file does, which is why
       # this uses docker compose directly instead.)
-      - name: Start ephemeral test services (Postgres/Redis/MinIO)
+      - name: Start ephemeral test services (Postgres/Redis)
         run: docker compose -f docker-compose.test.yml up -d
 
       - name: Wait for Postgres to accept connections

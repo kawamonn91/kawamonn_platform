@@ -3,17 +3,27 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { SyncService } from '../sync/sync.service';
 import * as fs from 'fs';
-import * as path from 'path';
+import { PrismaService } from '../prisma/prisma.service';
 import { isValidAccountName } from '../common/account-name';
+import { guessMime } from '../common/mime';
+import { userHomePath } from '../common/user-home';
+import {
+  SafeFsError,
+  safeLstat,
+  safeMkdir,
+  safeReadDir,
+  safeReadFile,
+  safeRemove,
+  safeRename,
+  safeUsage,
+  safeWriteFile,
+  splitRelPath,
+} from '../common/safe-fs';
+import { StorageUsageService } from './storage-usage.service';
 
-// SSH_BASE を環境変数で上書き可能にしているのはテスト専用(本番の .env/PM2 設定では
-// 未設定のため、常にデフォルトの実パスに解決される)。filebrowser.service.spec.ts が
-// 実ファイルシステム上でシンボリックリンクの挙動を検証するために使用する。
-const SSH_BASE = process.env.SSH_BASE || '/home/pi/hdd/ssh';
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export interface FileEntry {
@@ -22,289 +32,195 @@ export interface FileEntry {
   isDir: boolean;
   size: number;
   mtime: Date;
+  mime: string;
   readonly: boolean;
 }
 
+/**
+ * 利用者フォルダ(HDD)のファイルを、Web のストレージ画面と SSH 画面のファイルブラウザに提供する。
+ * ファイルの置き場所はここだけで、MinIO などへの複製はしない。
+ *
+ * パスは利用者フォルダからの相対パス("/a/b.txt" の形)。操作はすべて common/safe-fs を通し、
+ * シンボリックリンクはたどらず、利用者フォルダの外には出ない。
+ */
 @Injectable()
 export class FileBrowserService {
   constructor(
-    private readonly syncService: SyncService,
     private readonly prisma: PrismaService,
+    private readonly usage: StorageUsageService,
   ) {}
-  /**
-   * ユーザーのルートパス (/home/pi/hdd/ssh/{username} または /home/pi/hdd/ssh/users/{username}) を返す。
-   * ホームディレクトリが存在しない場合は作成する。
-   */
-  private async userRoot(username: string): Promise<string> {
+
+  /** 利用者の情報と、利用者フォルダのパス(無ければ作る) */
+  private async owner(username: string) {
     // 利用者名はそのままパスになるので、"." や ".." などは通さない
     if (!isValidAccountName(username)) {
       throw new ForbiddenException('Invalid account name');
     }
     const user = await this.prisma.user.findUnique({
       where: { account_name: username },
-      select: { role: true },
+      select: { id: true, role: true, used_bytes: true, quota_bytes: true },
     });
-    const isMin = user && user.role === 'admin';
-    const root = isMin
-      ? path.join(SSH_BASE, username)
-      : path.join(SSH_BASE, 'users', username);
-    if (!fs.existsSync(root)) {
-      fs.mkdirSync(root, { recursive: true });
-    }
-    return root;
+    if (!user) throw new ForbiddenException('Account not found');
+    const home = userHomePath(username, user.role === 'admin');
+    fs.mkdirSync(home, { recursive: true });
+    return { user, home };
   }
 
-  /**
-   * パストラバーサル攻撃を防止しつつ、絶対パスを解決する。
-   * ユーザーのルートディレクトリ外へのアクセスは ForbiddenException を投げる。
-   *
-   * textual な path.resolve だけでは、ユーザーが自分のディレクトリ内に作成した
-   * シンボリックリンク（例: /etc への ln -s）をそのまま辿って外部を読み書きできてしまう
-   * ため、実在するパスは fs.realpathSync でリンク先まで解決してから境界チェックする。
-   * 対象がまだ存在しない場合（新規作成時）は、実在する親ディレクトリを realpath 化し、
-   * それがルート配下にあることを確認したうえで残りのパスを連結する。
-   */
-  private async resolveSafe(
-    username: string,
-    relPath: string,
-  ): Promise<string> {
-    const root = await this.userRoot(username);
-    const realRoot = fs.realpathSync(root);
-
-    // relPath が空または '/' の場合はルートを返す
-    const normalized = relPath ? relPath.replace(/\\/g, '/') : '/';
-    const absolute = path.resolve(
-      root,
-      normalized.startsWith('/') ? normalized.slice(1) : normalized,
-    );
-
-    if (!absolute.startsWith(root + path.sep) && absolute !== root) {
-      throw new ForbiddenException(
-        'Access outside home directory is not allowed',
-      );
-    }
-
-    const realContainingPath = this.realpathOfNearestExistingAncestor(absolute);
-    if (
-      !realContainingPath.startsWith(realRoot + path.sep) &&
-      realContainingPath !== realRoot
-    ) {
-      throw new ForbiddenException(
-        'Access outside home directory is not allowed',
-      );
-    }
-
-    return absolute;
-  }
-
-  /**
-   * absolute パス自体、または最も近い実在する親ディレクトリを realpath 化して返す。
-   * シンボリックリンクを辿った実体が userRoot の外にあれば呼び出し元で拒否される。
-   */
-  private realpathOfNearestExistingAncestor(absolute: string): string {
-    let current = absolute;
-    while (!fs.existsSync(current)) {
-      const parent = path.dirname(current);
-      if (parent === current) break; // filesystem root, safety valve
-      current = parent;
-    }
-    return fs.realpathSync(current);
-  }
-
-  /** ディレクトリ内容を一覧取得 */
-  async listDir(username: string, relPath: string = '/'): Promise<FileEntry[]> {
-    const dirPath = await this.resolveSafe(username, relPath);
-
-    if (!fs.existsSync(dirPath)) {
-      throw new NotFoundException(`Directory not found: ${relPath}`);
-    }
-
-    const stat = fs.statSync(dirPath);
-    if (!stat.isDirectory()) {
-      throw new BadRequestException(`Path is not a directory: ${relPath}`);
-    }
-
-    const names = fs.readdirSync(dirPath);
-    const entries: FileEntry[] = [];
-
-    for (const name of names) {
-      // 隠しファイル(.ssh, .localなど)はスキップ
-      if (name.startsWith('.')) continue;
-
-      try {
-        const fullPath = path.join(dirPath, name);
-        const s = fs.statSync(fullPath);
-        const rel = path
-          .join(relPath === '/' ? '' : relPath, name)
-          .replace(/\\/g, '/');
-        entries.push({
-          name,
-          path: rel.startsWith('/') ? rel : '/' + rel,
-          isDir: s.isDirectory(),
-          size: s.size,
-          mtime: s.mtime,
-          readonly: false,
-        });
-      } catch {
-        // パーミッションエラーなどは無視
+  /** safe-fs の失敗を、画面に返す HTTP のエラーに変える */
+  private run<T>(relPath: string, fn: () => T): T {
+    try {
+      return fn();
+    } catch (e) {
+      if (e instanceof SafeFsError) {
+        switch (e.reason) {
+          case 'unsafe-path':
+            throw new ForbiddenException(
+              'Access outside home directory is not allowed',
+            );
+          case 'link':
+            throw new ForbiddenException(
+              'Symbolic links cannot be opened from the web',
+            );
+          case 'is-dir':
+            throw new BadRequestException(`Path is a directory: ${relPath}`);
+          case 'not-dir':
+            throw new BadRequestException(
+              `Path is not a directory: ${relPath}`,
+            );
+          case 'not-file':
+            throw new BadRequestException(`Not a regular file: ${relPath}`);
+          case 'too-large':
+            throw new BadRequestException(
+              'File is too large to download (max 100MB)',
+            );
+          case 'exists':
+            throw new BadRequestException('Destination already exists');
+        }
       }
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') {
+        throw new NotFoundException(`Not found: ${relPath}`);
+      }
+      throw e;
     }
+  }
 
-    // ディレクトリ先頭、次いで名前順
+  /** 利用者フォルダの中のパスとして安全か(安全でなければ 403) */
+  private assertSafePath(relPath: string): void {
+    if (!splitRelPath(relPath)) {
+      throw new ForbiddenException(
+        'Access outside home directory is not allowed',
+      );
+    }
+  }
+
+  /** フォルダの中身。隠しファイルと、リンク・特殊なファイルは出さない */
+  async listDir(username: string, relPath: string = '/'): Promise<FileEntry[]> {
+    const { home } = await this.owner(username);
+    const items = this.run(relPath, () => safeReadDir(home, relPath));
+    if (!items) throw new NotFoundException(`Directory not found: ${relPath}`);
+
+    const base = (splitRelPath(relPath) ?? []).join('/');
+    const entries: FileEntry[] = items
+      .filter((i) => !i.name.startsWith('.'))
+      .filter((i) => i.type === 'file' || i.type === 'dir')
+      .map((i) => ({
+        name: i.name,
+        path: `/${base ? base + '/' : ''}${i.name}`,
+        isDir: i.type === 'dir',
+        size: i.size,
+        mtime: new Date(i.mtimeMs),
+        mime: i.type === 'dir' ? 'directory' : guessMime(i.name),
+        readonly: false,
+      }));
+
+    // フォルダが先、次に名前順
     entries.sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-
     return entries;
   }
 
-  /** ファイル内容を Buffer として返す */
+  /** ファイルの中身 */
   async readFile(
     username: string,
     relPath: string,
   ): Promise<{ buffer: Buffer; mime: string; name: string }> {
-    const filePath = await this.resolveSafe(username, relPath);
-
-    if (!fs.existsSync(filePath)) {
-      throw new NotFoundException(`File not found: ${relPath}`);
-    }
-
-    const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      throw new BadRequestException('Cannot download a directory');
-    }
-    if (stat.size > MAX_FILE_SIZE) {
-      throw new BadRequestException(
-        'File is too large to download (max 100MB)',
-      );
-    }
-
-    const buffer = fs.readFileSync(filePath);
-    const name = path.basename(filePath);
-    // 簡易 MIME 推定
-    const ext = path.extname(name).toLowerCase();
-    const mimeMap: Record<string, string> = {
-      '.txt': 'text/plain',
-      '.md': 'text/markdown',
-      '.html': 'text/html',
-      '.css': 'text/css',
-      '.js': 'application/javascript',
-      '.ts': 'application/typescript',
-      '.json': 'application/json',
-      '.xml': 'application/xml',
-      '.pdf': 'application/pdf',
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.svg': 'image/svg+xml',
-      '.webp': 'image/webp',
-      '.zip': 'application/zip',
-      '.tar': 'application/x-tar',
-      '.gz': 'application/gzip',
-      '.py': 'text/x-python',
-      '.c': 'text/x-csrc',
-      '.cpp': 'text/x-c++src',
-      '.java': 'text/x-java',
-      '.sh': 'application/x-sh',
-      '.csv': 'text/csv',
-    };
-    const mime = mimeMap[ext] || 'application/octet-stream';
-
-    return { buffer, mime, name };
+    const { home } = await this.owner(username);
+    this.assertSafePath(relPath);
+    const file = this.run(relPath, () =>
+      safeReadFile(home, relPath, MAX_FILE_SIZE),
+    );
+    if (!file) throw new NotFoundException(`File not found: ${relPath}`);
+    const parts = splitRelPath(relPath) as string[];
+    const name = parts[parts.length - 1];
+    return { buffer: file.buffer, mime: guessMime(name), name };
   }
 
-  /** ファイルをアップロード（上書き） */
+  /** ファイルを書く(新規作成・上書き)。容量の上限を超えるなら断る */
   async writeFile(
     username: string,
     relPath: string,
     buffer: Buffer,
   ): Promise<void> {
-    const filePath = await this.resolveSafe(username, relPath);
-    const dir = path.dirname(filePath);
+    const { user, home } = await this.owner(username);
+    this.assertSafePath(relPath);
 
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    const current = this.run(relPath, () => safeLstat(home, relPath));
+    if (current?.type === 'dir') {
+      throw new BadRequestException(`Path is a directory: ${relPath}`);
+    }
+    const delta = buffer.length - (current?.type === 'file' ? current.size : 0);
+    if (
+      delta > 0 &&
+      BigInt(user.used_bytes) + BigInt(delta) > BigInt(user.quota_bytes)
+    ) {
+      throw new PayloadTooLargeException('Storage quota exceeded');
     }
 
-    fs.writeFileSync(filePath, buffer);
-
-    // FS→MinIO 同期
-    const user = await this.prisma.user.findFirst({
-      where: { account_name: username },
-      select: { id: true },
-    });
-    if (user) {
-      await this.syncService
-        .uploadFsFileToMinio(user.id, username, relPath)
-        .catch(() => {});
-    }
+    this.run(relPath, () => safeWriteFile(home, relPath, buffer));
+    await this.usage.adjust(user.id, delta);
   }
 
-  /** ディレクトリ作成 */
+  /** フォルダを作る(途中のフォルダも作る) */
   async mkdir(username: string, relPath: string): Promise<void> {
-    const dirPath = await this.resolveSafe(username, relPath);
-
-    if (fs.existsSync(dirPath)) {
+    const { home } = await this.owner(username);
+    this.assertSafePath(relPath);
+    if (this.run(relPath, () => safeLstat(home, relPath))) {
       throw new BadRequestException('Directory already exists');
     }
-
-    fs.mkdirSync(dirPath, { recursive: true });
-
-    // FS→MinIO 同期: DB にフォルダを作成
-    const user = await this.prisma.user.findFirst({
-      where: { account_name: username },
-      select: { id: true },
-    });
-    if (user) {
-      await this.syncService.createFolderInDb(user.id, relPath).catch(() => {});
-    }
+    this.run(relPath, () => safeMkdir(home, relPath));
   }
 
-  /** ファイルまたはディレクトリを削除 */
+  /** ファイルかフォルダ(中身ごと)を消す */
   async deleteItem(username: string, relPath: string): Promise<void> {
-    const itemPath = await this.resolveSafe(username, relPath);
+    const { user, home } = await this.owner(username);
+    this.assertSafePath(relPath);
+    const current = this.run(relPath, () => safeLstat(home, relPath));
+    if (!current) throw new NotFoundException(`Not found: ${relPath}`);
 
-    if (!fs.existsSync(itemPath)) {
-      throw new NotFoundException(`Not found: ${relPath}`);
-    }
-
-    const stat = fs.statSync(itemPath);
-    if (stat.isDirectory()) {
-      fs.rmSync(itemPath, { recursive: true, force: true });
-    } else {
-      fs.unlinkSync(itemPath);
-    }
-
-    // FS→MinIO 同期: MinIO + DB からも削除
-    const user = await this.prisma.user.findFirst({
-      where: { account_name: username },
-      select: { id: true },
-    });
-    if (user) {
-      await this.syncService
-        .deleteFsPathFromMinio(user.id, username, relPath)
-        .catch(() => {});
-    }
+    const freed =
+      current.type === 'dir'
+        ? this.run(relPath, () => safeUsage(home, relPath))
+        : current.type === 'file'
+          ? current.size
+          : 0;
+    this.run(relPath, () => safeRemove(home, relPath));
+    await this.usage.adjust(user.id, -freed);
   }
 
-  /** ファイルまたはディレクトリの名前変更/移動 */
+  /** 名前を変える・移す(どちらも利用者フォルダの中) */
   async rename(
     username: string,
     oldPath: string,
     newPath: string,
   ): Promise<void> {
-    const src = await this.resolveSafe(username, oldPath);
-    const dst = await this.resolveSafe(username, newPath);
-
-    if (!fs.existsSync(src)) {
+    const { home } = await this.owner(username);
+    this.assertSafePath(oldPath);
+    this.assertSafePath(newPath);
+    if (!this.run(oldPath, () => safeLstat(home, oldPath))) {
       throw new NotFoundException(`Not found: ${oldPath}`);
     }
-    if (fs.existsSync(dst)) {
-      throw new BadRequestException('Destination already exists');
-    }
-
-    fs.renameSync(src, dst);
+    this.run(newPath, () => safeRename(home, oldPath, newPath));
   }
 }

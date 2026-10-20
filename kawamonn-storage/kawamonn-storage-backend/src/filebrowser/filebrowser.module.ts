@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { FileBrowserController } from './filebrowser.controller';
 import { FileBrowserService } from './filebrowser.service';
+import { StorageUsageService } from './storage-usage.service';
 import { JwtModule } from '@nestjs/jwt';
 import { getJwtSecret } from '../common/jwt-secret';
 
@@ -12,7 +13,7 @@ import { getJwtSecret } from '../common/jwt-secret';
     }),
   ],
   controllers: [FileBrowserController],
-  providers: [FileBrowserService],
-  exports: [FileBrowserService],
+  providers: [FileBrowserService, StorageUsageService],
+  exports: [FileBrowserService, StorageUsageService],
 })
 export class FileBrowserModule {}

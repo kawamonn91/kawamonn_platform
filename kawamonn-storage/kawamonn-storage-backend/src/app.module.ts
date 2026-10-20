@@ -4,12 +4,10 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-import { FilesModule } from './files/files.module';
 import { AdminModule } from './admin/admin.module';
 import { SshModule } from './ssh/ssh.module';
 import { TerminalModule } from './terminal/terminal.module';
 import { FileBrowserModule } from './filebrowser/filebrowser.module';
-import { SyncModule } from './sync/sync.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { BullModule } from '@nestjs/bullmq';
@@ -59,12 +57,10 @@ import { join } from 'path';
     PrismaModule,
     AuthModule,
     UsersModule,
-    FilesModule,
     AdminModule,
     SshModule,
     TerminalModule,
     FileBrowserModule,
-    SyncModule,
     ScheduleModule.forRoot(),
     SchedulerModule,
   ],
