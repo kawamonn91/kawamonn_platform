@@ -10,7 +10,11 @@ import {
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useDisclosure } from '@mantine/hooks';
-import api from '../api/client';
+import {
+    type FileItem,
+    deleteEntry, isQuotaExceeded, isValidName, joinPath, listFolder, makeFolder,
+    readFileBytes, readFileText, uploadFile, writeText,
+} from '../api/storage';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useAuth } from '../AuthContext';
 
@@ -19,14 +23,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     import.meta.url
 ).toString();
 
-interface FileItem {
-    id: string;
-    name: string;
-    size: string;
-    mime_type: string;
-    created_at: string;
-    parent_id: string | null;
-}
+// FileItem の id はファイルやフォルダのパス("/docs/a.txt")。ファイルは HDD の利用者フォルダにあり、
+// SSH 画面の端末・ファイルブラウザと同じものを見ている
+
+const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
 
 // -----------------------------------------------
 // Icon helper
@@ -117,17 +117,15 @@ function FileCard({ file, onDownload, onDelete, onEdit, onPreview }: FileCardPro
             if (!isImage && !isPdf) return;
 
             try {
-                const response = await api.get(`/api/v1/files/${file.id}/stream`, {
-                    responseType: 'arraybuffer',
-                });
+                const data = await readFileBytes(file.id);
                 if (cancelled) return;
 
                 if (isImage) {
-                    const blob = new Blob([response.data], { type: file.mime_type });
+                    const blob = new Blob([data], { type: file.mime_type });
                     objectUrl = URL.createObjectURL(blob);
                     setThumbUrl(objectUrl);
                 } else if (isPdf) {
-                    const pdf = await pdfjsLib.getDocument({ data: response.data }).promise;
+                    const pdf = await pdfjsLib.getDocument({ data }).promise;
                     if (cancelled) return;
                     const page = await pdf.getPage(1);
                     if (cancelled) return;
@@ -272,9 +270,7 @@ export default function StorageDashboard() {
     const fetchFiles = useCallback(async () => {
         setLoading(true);
         try {
-            const pid = currentFolderId ?? 'null';
-            const res = await api.get(`/api/v1/files?parent_id=${pid}`);
-            setFiles(res.data.items ?? []);
+            setFiles(await listFolder(currentFolderId));
         } catch {
             // 401 is handled globally by the api client's interceptor
         } finally {
@@ -285,11 +281,18 @@ export default function StorageDashboard() {
     useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
     const handleCreateFolder = async () => {
-        if (!newFolderName.trim()) return;
+        const name = newFolderName.trim();
+        if (!name) return;
+        if (!isValidName(name)) {
+            alert('フォルダ名に「/」「\\」は使えません。「.」「..」だけの名前も使えません。');
+            return;
+        }
+        if (files.some((f) => f.name === name)) {
+            alert(`「${name}」という名前のものがすでにあります`);
+            return;
+        }
         try {
-            await api.post('/api/v1/files/folder',
-                { name: newFolderName.trim(), parent_id: currentFolderId }
-            );
+            await makeFolder(joinPath(currentFolderId, name));
             setNewFolderName('');
             closeFolderModal();
             fetchFiles();
@@ -300,19 +303,35 @@ export default function StorageDashboard() {
     };
 
     const handleCreateFile = async () => {
-        if (!newFileName.trim()) return;
+        const name = newFileName.trim();
+        if (!name) return;
+        if (!isValidName(name)) {
+            alert('ファイル名に「/」「\\」は使えません。「.」「..」だけの名前も使えません。');
+            return;
+        }
+        // 同じ名前のファイルは1つしか置けないので、上書きしてしまわないよう先に確かめる
+        if (files.some((f) => f.name === name)) {
+            alert(`「${name}」という名前のものがすでにあります`);
+            return;
+        }
+        const path = joinPath(currentFolderId, name);
         try {
-            const res = await api.post('/api/v1/files/text',
-                { name: newFileName.trim(), content: '', parent_id: currentFolderId }
-            );
+            await writeText(path, '');
             setNewFileName('');
             closeNewFileModal();
             fetchFiles();
-            // Open newly created file in editor
-            handleEditFile(res.data);
+            // 作ったファイルをそのままエディタで開く
+            handleEditFile({
+                id: path,
+                name,
+                size: '0',
+                mime_type: 'text/plain',
+                created_at: new Date().toISOString(),
+                parent_id: currentFolderId,
+            });
         } catch (err) {
             console.error('File creation failed', err);
-            alert('ファイルの作成に失敗しました');
+            alert(isQuotaExceeded(err) ? QUOTA_MESSAGE : 'ファイルの作成に失敗しました');
         }
     };
 
@@ -322,11 +341,7 @@ export default function StorageDashboard() {
         setEditorLoading(true);
         openEditor();
         try {
-            const res = await api.get(`/api/v1/files/${file.id}/stream`, {
-                responseType: 'text',
-                transformResponse: [(data) => data],
-            });
-            setEditorContent(res.data);
+            setEditorContent(await readFileText(file.id));
         } catch (err) {
             console.error('Failed to load file content', err);
             alert('ファイルの読み込みに失敗しました');
@@ -341,14 +356,12 @@ export default function StorageDashboard() {
         if (!editorFile) return;
         setEditorSaving(true);
         try {
-            await api.put(`/api/v1/files/${editorFile.id}/content`,
-                { content: editorContent }
-            );
+            await writeText(editorFile.id, editorContent);
             closeEditor();
             fetchFiles();
         } catch (err) {
             console.error('Failed to save file', err);
-            alert('保存に失敗しました');
+            alert(isQuotaExceeded(err) ? QUOTA_MESSAGE : '保存に失敗しました');
         } finally {
             setEditorSaving(false);
         }
@@ -384,99 +397,85 @@ export default function StorageDashboard() {
         }
     }, [closeEditor, handleSaveFile]);
 
-    const uploadSingleFile = async (file: File, parentId: string | null) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        if (parentId) formData.append('parent_id', parentId);
-        await api.post('/api/v1/files', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        });
-    };
-
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files ?? []);
-        if (!files.length) return;
+        const picked = Array.from(event.target.files ?? []);
+        if (!picked.length) return;
         event.target.value = '';
+
+        // 同じ名前のファイルは1つしか置けないので、上書きになるものがあれば確かめる
+        const existing = new Set(files.map((f) => f.name));
+        const conflicts = picked.filter((f) => existing.has(f.name)).map((f) => f.name);
+        if (conflicts.length && !window.confirm(
+            `次のファイルは同じ名前のものがあるので上書きされます。よろしいですか？\n${conflicts.join('\n')}`,
+        )) return;
+        const uploads = picked;
 
         setUploadProgress(0);
         let done = 0;
         const errors: string[] = [];
 
-        for (const file of files) {
+        let quotaExceeded = false;
+        for (const file of uploads) {
             try {
-                await uploadSingleFile(file, currentFolderId);
-            } catch {
+                await uploadFile(currentFolderId, file);
+            } catch (err) {
+                if (isQuotaExceeded(err)) quotaExceeded = true;
                 errors.push(file.name);
             }
             done++;
-            setUploadProgress(Math.round((done / files.length) * 100));
+            setUploadProgress(Math.round((done / uploads.length) * 100));
         }
 
         setUploadProgress(null);
-        if (errors.length) alert(`以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
+        if (errors.length) {
+            alert(`${quotaExceeded ? QUOTA_MESSAGE + '\n' : ''}以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
+        }
         fetchFiles();
     };
 
-    // Folder upload: recreate directory structure under current folder
+    // フォルダごとのアップロード: 選んだフォルダの構成のまま、今のフォルダの下に置く。
+    // 途中のフォルダはサーバーが作る。同じ名前のファイルは上書きされる
     const handleFolderUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files ?? []);
-        if (!files.length) return;
+        const picked = Array.from(event.target.files ?? []);
+        if (!picked.length) return;
         event.target.value = '';
 
+        const topName = picked[0].webkitRelativePath.split('/')[0];
+        if (files.some((f) => f.name === topName) && !window.confirm(
+            `「${topName}」という名前のものがすでにあります。中の同じ名前のファイルは上書きされます。よろしいですか？`,
+        )) return;
+
         setUploadProgress(0);
-        // Map from relative dir path → folder id in DB
-        const dirMap: Record<string, string> = {};
         let done = 0;
+        const errors: string[] = [];
+        let quotaExceeded = false;
 
-        // Sort so parent dirs come before children
-        const sorted = [...files].sort((a, b) =>
-            (a.webkitRelativePath || '').localeCompare(b.webkitRelativePath || '')
-        );
-
-        for (const file of sorted) {
-            // e.g. "MyFolder/subdir/file.txt"
+        for (const file of picked) {
+            // 例: "MyFolder/subdir/file.txt" → "MyFolder/subdir" に置く
             const parts = file.webkitRelativePath.split('/');
-            // parts = ['MyFolder', ...(subdirs)..., 'filename']
-            // Ensure each directory in the path exists
-            for (let i = 0; i < parts.length - 1; i++) {
-                const parentPath = parts.slice(0, i).join('/');
-                const dirPath = parts.slice(0, i + 1).join('/');
-
-                if (!dirMap[dirPath]) {
-                    const parentId = i === 0 ? currentFolderId : dirMap[parentPath];
-                    try {
-                        const res = await api.post('/api/v1/files/folder',
-                            { name: parts[i], parent_id: parentId }
-                        );
-                        dirMap[dirPath] = res.data.id;
-                    } catch (e) {
-                        console.error('Dir create failed', e);
-                    }
-                }
-            }
-
-            // Upload the file into its deepest folder
-            const fileDirPath = parts.slice(0, parts.length - 1).join('/');
-            const fileParentId = dirMap[fileDirPath] || currentFolderId;
+            let dir: string | null = currentFolderId;
+            for (const part of parts.slice(0, -1)) dir = joinPath(dir, part);
             try {
-                await uploadSingleFile(file, fileParentId);
-            } catch (e) {
-                console.error('File upload failed', e);
+                await uploadFile(dir, file);
+            } catch (err) {
+                if (isQuotaExceeded(err)) quotaExceeded = true;
+                errors.push(file.webkitRelativePath);
             }
             done++;
-            setUploadProgress(Math.round((done / sorted.length) * 100));
+            setUploadProgress(Math.round((done / picked.length) * 100));
         }
 
         setUploadProgress(null);
+        if (errors.length) {
+            alert(`${quotaExceeded ? QUOTA_MESSAGE + '\n' : ''}以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
+        }
         fetchFiles();
     };
 
     const handleDownload = async (file: FileItem) => {
         try {
-            const res = await api.get(`/api/v1/files/${file.id}/stream`, {
-                responseType: 'arraybuffer',
-            });
-            const blob = new Blob([res.data], { type: file.mime_type || 'application/octet-stream' });
+            const data = await readFileBytes(file.id);
+            const blob = new Blob([data], { type: file.mime_type || 'application/octet-stream' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -511,14 +510,12 @@ export default function StorageDashboard() {
         setPreviewLoading(true);
         openPreview();
         try {
-            const res = await api.get(`/api/v1/files/${file.id}/stream`, {
-                responseType: 'arraybuffer',
-            });
+            const data = await readFileBytes(file.id);
             if (file.mime_type.startsWith('image/')) {
-                const blob = new Blob([res.data], { type: file.mime_type });
+                const blob = new Blob([data], { type: file.mime_type });
                 setPreviewBlobUrl(URL.createObjectURL(blob));
             } else if (file.mime_type === 'application/pdf') {
-                const pdf = await pdfjsLib.getDocument({ data: res.data }).promise;
+                const pdf = await pdfjsLib.getDocument({ data }).promise;
                 setPdfDocRef(pdf);
                 setPdfTotalPages(pdf.numPages);
                 // Render first page after state is updated via effect
@@ -545,7 +542,7 @@ export default function StorageDashboard() {
         const label = file.mime_type === 'directory' ? 'フォルダ' : 'ファイル';
         if (!window.confirm(`"${file.name}" を削除しますか？${file.mime_type === 'directory' ? '\n※ フォルダ内のファイルも全て削除されます。' : ''}`)) return;
         try {
-            await api.delete(`/api/v1/files/${file.id}`);
+            await deleteEntry(file.id);
             fetchFiles();
         } catch {
             alert(`${label}の削除に失敗しました`);
