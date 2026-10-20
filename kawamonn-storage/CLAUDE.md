@@ -56,8 +56,6 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   モデル名を固定で書かない)
 - **本番(稼働中のPM2プロセス・Docker・Cloudflare設定)に影響する操作は、実行前に必ず確認を取る。**
   過去にCloudflareトンネルトークンの操作で無断で本番に影響を与えてしまった経緯があるため、特に注意する
-- `kawamonn-storage/infrastructure/cloudflared/config.yml` はユーザー自身が直接編集することがある。
-  `git status` で見覚えのない変更が出たら、自分のものでなければ除外してstageする
 - `kawamonn-labs/` ディレクトリ(git root直下)は無関係な別プロジェクト。触れない
 - Auto Mode配下では、`pm2 stop/restart`・`docker --privileged` 等の本番/権限系操作が
   安全機能でブロックされることがある。ブロックされたら回避策を探さず、ユーザーに実行してもらうか
@@ -140,8 +138,8 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - SSH コンテナの 22 番はループバック(`127.0.0.1`)にだけ公開する(`ssh.service.ts`)。ブラウザ端末も
   SSH ゲートウェイも `docker exec` で接続するので、LAN に公開する必要はない。この設定は新しく作るコンテナから効く
 - **SSH コンテナのイメージ `kawamonn-ssh-base:latest` は `infrastructure/ssh-provisioning/` の Dockerfile と
-  `entrypoint.sh` で作る。** 同じ目的の古い `infrastructure/docker/ssh-env/` は使われておらず、2026-10-12 に削除した
-  (`ssh-provisioning/provision.sh` も podman を使っていた頃の古い手順で、今は使っていない)
+  `entrypoint.sh` で作る。** 同じ目的の古い `infrastructure/docker/ssh-env/` と、podman を使っていた頃の
+  `ssh-provisioning/provision.sh` は使われておらず、削除した
 - コンテナ内のユーザーは **UID/GID 70000**(`entrypoint.sh` の `USER_UID`)。ホームはホストのフォルダをそのまま
   つなぐので、この番号がホスト上のファイルの所有者になる。ホストの一般ユーザー(1000〜60000)、systemd の動的ユーザー
   (61184〜65519)、サブ UID(100000〜)と重ならない番号にしてある。以前は UID を指定せずに作っていたため 1001 になり、
@@ -156,8 +154,10 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - MinIO(`kawamonn_minio`)は compose に残っていて動いているが、利用者のファイルには使っていない(2026-10-21 以降)。
   バケットには匿名アクセスを許可しない(compose の `minio-init` で `mc anonymous set none`)
 - Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
-  管理している(`storage.kawamonn.com` → frontend、`ssh.kawamonn.com` → SSH)。リポジトリの
-  `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていない
+  管理している(`storage.kawamonn.com` → frontend)。リポジトリにトンネルの設定ファイルは置かない
+  (以前あった `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていなかったので削除した)
+- **SSH 接続の入口(`ssh.kawamonn.com`)は 2026-10 に廃止した。** 端末はブラウザからだけ使う。利用者のホストの OS アカウントは
+  作らず、端末のコンテナのポートも公開しない
 - モニタリング: `kawamonn-storage/monitoring/healthcheck.sh` が5分毎にcron実行。障害時はPM2再起動を
   試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。Pi 本体や回線が
   止まった場合は、Cloudflare の通知機能(トンネルの状態)でメールが届く
