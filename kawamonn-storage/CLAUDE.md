@@ -24,7 +24,7 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   Redis/BullMQ、MinIO(S3互換)、dockerode、Passport/JWT、class-validator
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 22 suites/92 tests + e2e 4 suites/11 tests)、
+- **テスト**: Jest(backend: unit 24 suites/154 tests + e2e 4 suites/11 tests)、
   Vitest(frontend: 2 files/18 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
@@ -65,9 +65,18 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 
 ## 5. 既知の制約・過去にハマった点
 
-- **`SSH_BASE`**(`src/filebrowser/filebrowser.service.ts`)は本番では `/home/pi/hdd/ssh` にハードコード
-  (環境変数で上書き可能)。ユニットテストは `src/jest-setup.ts`(Jestの`setupFiles`)で一時ディレクトリに
-  差し替えている。この仕組みを壊さないこと
+- **`SSH_BASE`**(`src/filebrowser/filebrowser.service.ts`、`src/sync/sync.service.ts`)は本番では `/home/pi/hdd/ssh`
+  (環境変数 `SSH_BASE` で上書き可能)。ユニットテストは `src/jest-setup.ts`(Jestの`setupFiles`)、e2e は
+  `test/setup-e2e.ts` で一時ディレクトリに差し替えている。この仕組みを壊さないこと(差し替えないと、Pi 上で
+  テストを実行したときに本番の利用者フォルダを読み書きしてしまう)
+- **利用者フォルダの中のファイル操作は、必ず `src/sync/safe-fs.ts` の関数を使う。** パスの文字列をそのまま
+  `fs` に渡さない。利用者は端末から自由にシンボリックリンクを作れるので、文字列のパスで読み書きすると、
+  リンクをたどって利用者フォルダの外(backend の `.env` など)を読み書きしてしまう。`safe-fs` はフォルダを
+  1段ずつ `O_NOFOLLOW` で開き、開いた fd を起点に次の名前だけを解決する(Linux 専用)。
+  ファイルの監視(chokidar)も `followSymlinks: false` にしている
+- **ファイル名・フォルダ名と利用者名は、どちらもパスになる。** ファイル名は `src/common/file-name.ts`
+  (`/` `\` NUL・`.` `..`・255 バイト超を拒否)、利用者名は `src/common/account-name.ts`(先頭は英数字、
+  2文字目以降は英数字と `_ . -`、32 文字まで)で検査する。名前を受け取る入口を増やしたら、必ずこれを通す
 - **`.gitignore`のユーザーデータ除外パターンは必ずリポジトリルート限定(先頭に`/`)にする。**
   過去に `users/` のような無アンカーのパターンが、`kawamonn-storage-backend/src/users/` モジュール一式と
   Androidの `MainActivity.java` を誤って巻き込み、**一度もgitにコミットされていなかった**という実害があった
