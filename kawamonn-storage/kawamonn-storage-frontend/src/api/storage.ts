@@ -64,9 +64,15 @@ export function isQuotaExceeded(err: unknown): boolean {
     return (err as { response?: { status?: number } })?.response?.status === 413;
 }
 
-export async function listFolder(dir: string | null): Promise<FileItem[]> {
+/** フォルダ(null は一番上)の中身を、API が返す形のまま */
+export async function listEntries(dir: string | null): Promise<StorageEntry[]> {
     const res = await api.get('/api/v1/filebrowser/ls', { params: { path: dir ?? '/' } });
-    return ((res.data?.entries ?? []) as StorageEntry[]).map(toFileItem);
+    return (res.data?.entries ?? []) as StorageEntry[];
+}
+
+/** フォルダ(null は一番上)の中身を、ストレージ画面の形で */
+export async function listFolder(dir: string | null): Promise<FileItem[]> {
+    return (await listEntries(dir)).map(toFileItem);
 }
 
 export async function readFileBytes(path: string): Promise<ArrayBuffer> {
@@ -104,6 +110,11 @@ export async function uploadFile(dir: string | null, file: File): Promise<void> 
         params: { path: dir ?? '/' },
         headers: { 'Content-Type': 'multipart/form-data' },
     });
+}
+
+/** 名前を変える・移す(移し先がすでにあれば失敗する) */
+export async function renameEntry(oldPath: string, newPath: string): Promise<void> {
+    await api.patch('/api/v1/filebrowser/rename', { oldPath, newPath });
 }
 
 /** ファイルかフォルダ(中身ごと)を消す */

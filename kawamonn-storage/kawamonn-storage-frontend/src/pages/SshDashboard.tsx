@@ -21,6 +21,11 @@ import '@xterm/xterm/css/xterm.css';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
 import { formatBytes, fetchWithRetry, isEditable } from './sshFileHelpers';
+import {
+    type StorageEntry,
+    deleteEntry, isQuotaExceeded, isValidName, joinPath, listEntries, makeFolder, parentOf,
+    readFileBytes, readFileText, renameEntry, uploadFile, writeText,
+} from '../api/storage';
 
 type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
 
@@ -29,13 +34,11 @@ interface SshStatus {
     resource_usage: { cpu_limit: string; memory_limit: string };
 }
 
-interface FileEntry {
-    name: string;
-    path: string;
-    isDir: boolean;
-    size: number;
-    mtime: string;
-}
+// ファイルブラウザの1件(ストレージ画面と同じ API の形)
+type FileEntry = StorageEntry;
+
+const NAME_RULE_MESSAGE = '名前に「/」「\\」は使えません。「.」「..」だけの名前も使えません。';
+const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
 
 // ─────────────────────────────────────────────
 // ファイルブラウザコンポーネント
@@ -70,10 +73,7 @@ function FileBrowser() {
         setLoading(true);
         setError('');
         try {
-            const res = await fetchWithRetry(() => api.get('/api/v1/filebrowser/ls', {
-                params: { path },
-            }));
-            setEntries(res.data.entries);
+            setEntries(await fetchWithRetry(() => listEntries(path)));
             setCurrentPath(path);
         } catch (e) {
             setError(getErrorMessage(e, 'ディレクトリを取得できませんでした'));
@@ -103,11 +103,8 @@ function FileBrowser() {
 
     const handleDownload = async (entry: FileEntry) => {
         try {
-            const res = await api.get('/api/v1/filebrowser/read', {
-                params: { path: entry.path },
-                responseType: 'blob',
-            });
-            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const data = await readFileBytes(entry.path);
+            const url = window.URL.createObjectURL(new Blob([data]));
             const link = document.createElement('a');
             link.href = url;
             link.download = entry.name;
@@ -121,7 +118,7 @@ function FileBrowser() {
     const handleDelete = async (entry: FileEntry) => {
         if (!window.confirm(`「${entry.name}」を削除しますか？`)) return;
         try {
-            await api.delete('/api/v1/filebrowser/delete', { params: { path: entry.path } });
+            await deleteEntry(entry.path);
             fetchDir(currentPath);
         } catch (e) {
             setError(getErrorMessage(e, '削除に失敗しました'));
@@ -131,25 +128,28 @@ function FileBrowser() {
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
-        const formData = new FormData();
-        formData.append('file', files[0]);
+        const file = files[0];
+        // 同じ名前のファイルは1つしか置けないので、上書きになるなら確かめる
+        if (entries.some((en) => en.name === file.name)
+            && !window.confirm(`「${file.name}」は同じ名前のものがあるので上書きされます。よろしいですか？`)) {
+            e.target.value = '';
+            return;
+        }
         try {
-            await api.post('/api/v1/filebrowser/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-                params: { path: currentPath },
-            });
+            await uploadFile(currentPath, file);
             fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, 'アップロードに失敗しました'));
+        } catch (err) {
+            setError(isQuotaExceeded(err) ? QUOTA_MESSAGE : getErrorMessage(err, 'アップロードに失敗しました'));
         }
         e.target.value = '';
     };
 
     const handleMkdir = async () => {
-        if (!newFolderName.trim()) return;
-        const newPath = `${currentPath === '/' ? '' : currentPath}/${newFolderName.trim()}`;
+        const name = newFolderName.trim();
+        if (!name) return;
+        if (!isValidName(name)) { setError(NAME_RULE_MESSAGE); return; }
         try {
-            await api.post('/api/v1/filebrowser/mkdir', { path: newPath });
+            await makeFolder(joinPath(currentPath, name));
             setNewFolderModal(false);
             setNewFolderName('');
             fetchDir(currentPath);
@@ -165,14 +165,11 @@ function FileBrowser() {
     };
 
     const handleRename = async () => {
-        if (!renameTarget || !renameName.trim()) return;
-        const parentDir = renameTarget.path.split('/').slice(0, -1).join('/') || '/';
-        const newPath = `${parentDir === '/' ? '' : parentDir}/${renameName.trim()}`;
+        const name = renameName.trim();
+        if (!renameTarget || !name) return;
+        if (!isValidName(name)) { setError(NAME_RULE_MESSAGE); return; }
         try {
-            await api.patch('/api/v1/filebrowser/rename', {
-                oldPath: renameTarget.path,
-                newPath,
-            });
+            await renameEntry(renameTarget.path, joinPath(parentOf(renameTarget.path), name));
             setRenameModal(false);
             setRenameTarget(null);
             fetchDir(currentPath);
@@ -189,12 +186,7 @@ function FileBrowser() {
         setEditorModal(true);
         setEditorContent('');
         try {
-            const res = await fetchWithRetry(() => api.get('/api/v1/filebrowser/read', {
-                params: { path: entry.path },
-                responseType: 'text',
-                transformResponse: [(data) => data],  // JSON パースをバイパス
-            }));
-            setEditorContent(res.data);
+            setEditorContent(await fetchWithRetry(() => readFileText(entry.path)));
         } catch (e) {
             setError(getErrorMessage(e, 'ファイルを読み込めませんでした(自動復旧に失敗しました)'));
             setEditorModal(false);
@@ -206,13 +198,11 @@ function FileBrowser() {
     const handleEditorSave = async () => {
         setEditorSaving(true);
         try {
-            await api.put('/api/v1/filebrowser/write-text',
-                { path: editorPath, content: editorContent }
-            );
+            await writeText(editorPath, editorContent);
             setEditorModal(false);
             fetchDir(currentPath);
         } catch (e) {
-            setError(getErrorMessage(e, '保存に失敗しました'));
+            setError(isQuotaExceeded(e) ? QUOTA_MESSAGE : getErrorMessage(e, '保存に失敗しました'));
         } finally {
             setEditorSaving(false);
         }
@@ -256,8 +246,15 @@ function FileBrowser() {
     };
 
     const handleCreateNewFile = () => {
-        if (!newFileName.trim()) return;
-        const relPath = `${currentPath === '/' ? '' : currentPath}/${newFileName.trim()}`;
+        const name = newFileName.trim();
+        if (!name) return;
+        if (!isValidName(name)) { setError(NAME_RULE_MESSAGE); return; }
+        // 保存すると上書きになるので、同じ名前があれば作らない
+        if (entries.some((en) => en.name === name)) {
+            setError(`「${name}」という名前のものがすでにあります`);
+            return;
+        }
+        const relPath = joinPath(currentPath, name);
         setNewFileModal(false);
         // 空のエディタを開く
         setEditorPath(relPath);
