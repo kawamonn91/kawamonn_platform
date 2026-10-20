@@ -9,24 +9,19 @@ import { SshModule } from './ssh/ssh.module';
 import { TerminalModule } from './terminal/terminal.module';
 import { FileBrowserModule } from './filebrowser/filebrowser.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { ClientIpThrottlerGuard } from './common/client-ip-throttler.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: 60000, // 1分
-        limit: 60, // 1分あたり60リクエスト
-      },
-      {
-        name: 'auth',
-        ttl: 60000, // 1分
-        limit: 10, // 認証系は厳しく: 1分あたり10リクエスト
-      },
-    ]),
+    // 回数制限は接続元ごと(ClientIpThrottlerGuard。本番は Cloudflare の CF-Connecting-IP)に、1分あたり 300 回まで。
+    // ストレージ画面はサムネイル1枚ごとに1回読み込むので、1人が画像の多いフォルダを開いても足りる量にする。
+    // ログイン・登録・確認コードなどの認証の API は、各ルートの @Throttle({ default: ... }) でずっと厳しくしている。
+    // (以前は「認証用 1分10回」の名前付きの制限が全ルートにかかり、しかも全員が 127.0.0.1 に見えていたので、
+    //  サイト全体で1分10回しか API を呼べなかった)
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 300 }]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -42,7 +37,7 @@ import { APP_GUARD } from '@nestjs/core';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: ClientIpThrottlerGuard,
     },
   ],
 })

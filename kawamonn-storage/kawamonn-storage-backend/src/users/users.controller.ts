@@ -13,6 +13,7 @@ import { UpdateMeDto } from './dto/update-me.dto';
 import * as argon2 from 'argon2';
 import * as bcrypt from 'bcrypt';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -37,6 +38,8 @@ export class UsersController {
   }
 
   @Put('me')
+  // パスワードの変更(今のパスワードの確認)を含むので厳しくする
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async updateMe(@CurrentUser() me: AuthUser, @Body() body: UpdateMeDto) {
     const user = await this.usersService.findOne({ id: me.id });
     if (!user) throw new BadRequestException('User not found');

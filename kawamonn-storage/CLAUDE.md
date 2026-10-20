@@ -24,7 +24,7 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   dockerode、Passport/JWT、class-validator。MinIO・Redis/BullMQ は 2026-10 に廃止した(ファイルは HDD の利用者フォルダだけ)
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 22 suites/141 tests + e2e 4 suites/14 tests)、
+- **テスト**: Jest(backend: unit 23 suites/144 tests + e2e 4 suites/14 tests)、
   Vitest(frontend: 4 files/25 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
@@ -152,6 +152,12 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
   管理している(`storage.kawamonn.com` → frontend)。リポジトリにトンネルの設定ファイルは置かない
   (以前あった `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていなかったので削除した)
+- **API の回数制限**(`@nestjs/throttler`)は、接続元ごとに1分300回(`app.module.ts`)。本番の通信は Cloudflare → vite preview →
+  backend と届き、backend からは全員が 127.0.0.1 に見えるので、Pi の中から届いたものに限り Cloudflare の `CF-Connecting-IP` で
+  数える(`ClientIpThrottlerGuard`)。認証の API は各ルートの `@Throttle({ default: { limit: N } })` で厳しくしている
+  (登録5・ログイン10・確認コードの送信3・管理者ログイン5・管理者の確認コード5・再設定の申請3・再設定5・`PUT /users/me` 10)。
+  **名前付きの制限(`ThrottlerModule.forRoot` の2つ目以降)は全ルートにかかる**ので増やさない。以前は「認証用 1分10回」が
+  全ルートにかかり、全員が同じ接続元に見えていたため、サイト全体で1分10回しか API を呼べなかった(2026-10-21 に修正)
 - **SSH 接続の入口(`ssh.kawamonn.com`)は 2026-10 に廃止した。** 端末はブラウザからだけ使う。利用者のホストの OS アカウントは
   作らず(登録・パスワードの変更で useradd・chpasswd などを呼ばない)、端末のコンテナのポートも公開しない。
   新規登録は DB に利用者を作るだけで、利用者フォルダはファイルブラウザか端末を初めて使うときに作られる
