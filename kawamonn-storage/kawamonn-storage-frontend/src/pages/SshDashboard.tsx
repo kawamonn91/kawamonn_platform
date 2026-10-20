@@ -26,6 +26,7 @@ import {
     deleteEntry, isQuotaExceeded, isValidName, joinPath, listEntries, makeFolder, parentOf,
     readFileBytes, readFileText, renameEntry, uploadFile, writeText,
 } from '../api/storage';
+import { createLatestTracker } from '../api/latest';
 
 type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
 
@@ -69,16 +70,23 @@ function FileBrowser() {
     const uploadRef = useRef<HTMLInputElement>(null);
     const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+    // 素早くフォルダを移動したとき、遅れて届いた古い一覧(再試行の分を含む)で上書きしないよう、最後に頼んだ結果だけを使う
+    const latestList = useRef(createLatestTracker());
     const fetchDir = useCallback(async (path: string) => {
+        const id = latestList.current.next();
         setLoading(true);
         setError('');
         try {
-            setEntries(await fetchWithRetry(() => listEntries(path)));
+            const items = await fetchWithRetry(() => listEntries(path));
+            if (!latestList.current.isLatest(id)) return;
+            setEntries(items);
             setCurrentPath(path);
         } catch (e) {
-            setError(getErrorMessage(e, 'ディレクトリを取得できませんでした'));
+            if (latestList.current.isLatest(id)) {
+                setError(getErrorMessage(e, 'ディレクトリを取得できませんでした'));
+            }
         } finally {
-            setLoading(false);
+            if (latestList.current.isLatest(id)) setLoading(false);
         }
     }, []);
 

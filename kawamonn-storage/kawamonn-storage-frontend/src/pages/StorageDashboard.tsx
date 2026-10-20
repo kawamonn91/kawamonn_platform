@@ -15,6 +15,7 @@ import {
     deleteEntry, isQuotaExceeded, isValidName, joinPath, listFolder, makeFolder,
     readFileBytes, readFileText, uploadFile, writeText,
 } from '../api/storage';
+import { createLatestTracker } from '../api/latest';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useAuth } from '../AuthContext';
 
@@ -267,14 +268,18 @@ export default function StorageDashboard() {
     const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
     const { logout } = useAuth();
 
+    // 素早くフォルダを移動したとき、遅れて届いた古い一覧で上書きしないよう、最後に頼んだ結果だけを使う
+    const latestList = useRef(createLatestTracker());
     const fetchFiles = useCallback(async () => {
+        const id = latestList.current.next();
         setLoading(true);
         try {
-            setFiles(await listFolder(currentFolderId));
+            const items = await listFolder(currentFolderId);
+            if (latestList.current.isLatest(id)) setFiles(items);
         } catch {
             // 401 is handled globally by the api client's interceptor
         } finally {
-            setLoading(false);
+            if (latestList.current.isLatest(id)) setLoading(false);
         }
     }, [currentFolderId]);
 
