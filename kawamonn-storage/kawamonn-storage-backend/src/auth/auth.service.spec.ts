@@ -73,6 +73,32 @@ describe('AuthService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('メール送信の設定', () => {
+    const original = process.env.SMTP_PORT;
+    afterEach(() => {
+      process.env.SMTP_PORT = original;
+    });
+
+    it.each([
+      ['465', true],
+      ['587', false],
+    ])(
+      'SMTP_PORT=%s なら secure=%s(465 番だけ最初から TLS)',
+      (port, secure) => {
+        process.env.SMTP_PORT = port;
+        new AuthService(
+          mockUsersService as any,
+          mockJwtService as any,
+          mockPrisma as any,
+        );
+        const opts = (nodemailer.createTransport as jest.Mock).mock.calls.at(
+          -1,
+        )[0];
+        expect(opts).toMatchObject({ port: Number(port), secure });
+      },
+    );
+  });
+
   describe('sendOtp', () => {
     it('rejects emails outside the @u-aizu.ac.jp domain', async () => {
       await expect(service.sendOtp('someone@gmail.com')).rejects.toThrow(

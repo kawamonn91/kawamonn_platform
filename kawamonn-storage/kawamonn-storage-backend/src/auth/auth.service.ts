@@ -33,10 +33,12 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
   ) {
+    const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '465', 10),
-      secure: true,
+      port: smtpPort,
+      // 465 番は最初から TLS、それ以外(587 など)は STARTTLS。monitoring/mailer.js と同じ扱い
+      secure: smtpPort === 465,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
