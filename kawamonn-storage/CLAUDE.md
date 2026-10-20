@@ -21,11 +21,11 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 ## 2. 技術スタック(2026年10月時点で動作確認済み)
 
 - **Backend**: NestJS 11(2026年9月にv10/v11混在を解消済み)、TypeScript、Prisma(PostgreSQL)、
-  Redis/BullMQ、MinIO(S3互換)、dockerode、Passport/JWT、class-validator
+  Redis/BullMQ、dockerode、Passport/JWT、class-validator(MinIO は 2026-10 から利用者のファイルには使っていない。下記)
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 24 suites/154 tests + e2e 4 suites/11 tests)、
-  Vitest(frontend: 2 files/18 tests)
+- **テスト**: Jest(backend: unit 22 suites/139 tests + e2e 4 suites/14 tests)、
+  Vitest(frontend: 3 files/23 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
   3ジョブが走る。lint は backend・frontend とも実gate(0件維持)で、backend は `npm run lint:check`(自動修正なし)で判定する。
@@ -65,15 +65,15 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 
 ## 5. 既知の制約・過去にハマった点
 
-- **`SSH_BASE`**(`src/filebrowser/filebrowser.service.ts`、`src/sync/sync.service.ts`)は本番では `/home/pi/hdd/ssh`
+- **`SSH_BASE`**(`src/common/user-home.ts` の `sshBase()`)は本番では `/home/pi/hdd/ssh`
   (環境変数 `SSH_BASE` で上書き可能)。ユニットテストは `src/jest-setup.ts`(Jestの`setupFiles`)、e2e は
   `test/setup-e2e.ts` で一時ディレクトリに差し替えている。この仕組みを壊さないこと(差し替えないと、Pi 上で
   テストを実行したときに本番の利用者フォルダを読み書きしてしまう)
-- **利用者フォルダの中のファイル操作は、必ず `src/sync/safe-fs.ts` の関数を使う。** パスの文字列をそのまま
+- **利用者フォルダの中のファイル操作は、必ず `src/common/safe-fs.ts` の関数を使う。** パスの文字列をそのまま
   `fs` に渡さない。利用者は端末から自由にシンボリックリンクを作れるので、文字列のパスで読み書きすると、
   リンクをたどって利用者フォルダの外(backend の `.env` など)を読み書きしてしまう。`safe-fs` はフォルダを
   1段ずつ `O_NOFOLLOW` で開き、開いた fd を起点に次の名前だけを解決する(Linux 専用)。
-  ファイルの監視(chokidar)も `followSymlinks: false` にしている
+  リンクは利用者フォルダの中を指していてもたどらず、Web の一覧にも出さない。失敗の理由は `SafeFsError` の `reason`
 - **ファイル名・フォルダ名と利用者名は、どちらもパスになる。** ファイル名は `src/common/file-name.ts`
   (`/` `\` NUL・`.` `..`・255 バイト超を拒否)、利用者名は `src/common/account-name.ts`(先頭は英数字、
   2文字目以降は英数字と `_ . -`、32 文字まで)で検査する。名前を受け取る入口を増やしたら、必ずこれを通す
@@ -109,9 +109,9 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   Docker の停止を伴う作業のあとは、`pm2 ls` と公開URLで復旧を確認する
 - backend は DB に `localhost` で接続していて、実際には IPv6 の `::1` を使う。DB などのポートを
   ループバックに絞るときは `127.0.0.1` と `[::1]` の両方で公開する(片方だけだと繋がらなくなる)
-- backend の SyncService は `/home/pi/hdd/ssh` 全体を監視する。2026-10-12 に `kawamonn-labs/` と `.git/` を
-  監視対象から外し、起動のたびに出ていた `EACCES` の Watcher error を解消した。管理者のストレージは
-  `/home/pi/hdd/ssh/<管理者名>` に直接あるので、除外パターンを広げるときは管理者のディレクトリを巻き込まないこと
+- **本番の backend のビルド結果は `dist/src/main.js` に出る**(`start:prod` もこのパス)。本番のフォルダには git で管理していない
+  `create-admin.ts`・`prisma.config.ts`・`test-email.ts` がルートにあり、それに合わせて出力先が1段深くなっている。
+  これらが無い場所(git worktree や CI)でビルドすると `dist/main.js` に出るので、手元で起動するときは注意する
 - **backend の `package.json` と `package-lock.json` は CRLF 改行。** node や npm で書き換えると LF になり、
   ファイル全体が差分になる。書き換えたら CRLF に戻してからコミットする(`src/` の .ts は LF)
 - **typescript-eslint v8 で `no-var-requires` は `no-require-imports` に置き換わった。** 意図的な遅延 `require()` を
@@ -129,6 +129,14 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - Docker: `kawamonn_db`(Postgres 15)、`kawamonn_redis`、`kawamonn_minio` は **ループバック
   (`127.0.0.1` と `::1`)だけで公開**し、LAN からは届かない。ほかに `kawamonn_cloudflared`、
   ユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)
+- **利用者のファイルは HDD の利用者フォルダ(一般の利用者は `/home/pi/hdd/ssh/users/<名前>`、管理者は
+  `/home/pi/hdd/ssh/<名前>`)だけに置く**(2026-10-21 に一本化)。Web のストレージ画面も SSH 画面のファイルブラウザも
+  `/api/v1/filebrowser`(パス指定)で同じフォルダを直接読み書きし、端末(SSH コンテナ)はそのフォルダをマウントしている。
+  以前は MinIO + Postgres にも同じファイルを持って同期していたが(`SyncService`、`/files` API)、同じ HDD の上の二重持ちで
+  食い違いの原因になっていたので廃止した。DB の `File` テーブルは使っていない(残してあるだけ)
+- 容量の上限: `StorageUsageService` が利用者フォルダの実際の中身(隠しファイルを含む)を起動時と10分ごとに測って
+  `User.used_bytes` に保存し、Web からの保存で上限(`quota_bytes`)を超えるなら 413 で断る。端末からの書き込みは制限しない
+  (ext4 のプロジェクトクォータは HDD で有効になっていない)
 - SSH コンテナの 22 番はループバック(`127.0.0.1`)にだけ公開する(`ssh.service.ts`)。ブラウザ端末も
   SSH ゲートウェイも `docker exec` で接続するので、LAN に公開する必要はない。この設定は新しく作るコンテナから効く
 - **SSH コンテナのイメージ `kawamonn-ssh-base:latest` は `infrastructure/ssh-provisioning/` の Dockerfile と
@@ -145,8 +153,8 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   (変わるのは新しく作るコンテナから。既存のコンテナを作り直すと、ホーム以外の場所に入れたものは消える)
 - 期限切れで削除(`status=deleted`)になったユーザーは、行が DB に残っていても、ログイン(`validateUser`。パスワード照合後に
   照合失敗と同じエラーで拒否)・HTTP の認証(`JwtStrategy`)・ブラウザ端末(`terminal.gateway.ts`)のすべてで拒否する
-- MinIO のバケットには匿名アクセスを許可しない(compose の `minio-init` で `mc anonymous set none`)。
-  ファイルは必ず backend 経由(所有者を確認したうえでストリーム配信)で返す
+- MinIO(`kawamonn_minio`)は compose に残っていて動いているが、利用者のファイルには使っていない(2026-10-21 以降)。
+  バケットには匿名アクセスを許可しない(compose の `minio-init` で `mc anonymous set none`)
 - Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
   管理している(`storage.kawamonn.com` → frontend、`ssh.kawamonn.com` → SSH)。リポジトリの
   `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていない

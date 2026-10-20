@@ -11,7 +11,7 @@
 
 | ディレクトリ | 内容 |
 | --- | --- |
-| `kawamonn-storage/kawamonn-storage-backend` | API サーバー(NestJS 11 / Prisma / BullMQ / MinIO / dockerode) |
+| `kawamonn-storage/kawamonn-storage-backend` | API サーバー(NestJS 11 / Prisma / dockerode) |
 | `kawamonn-storage/kawamonn-storage-frontend` | 画面(React 19 / Vite / Mantine / xterm.js、Capacitor で Android 版も作成) |
 | `kawamonn-storage/infrastructure` | 本番用 Docker Compose(PostgreSQL / Redis / MinIO / Cloudflare Tunnel)、SSH 環境のイメージ |
 | `kawamonn-storage/monitoring` | 5分ごとに動くヘルスチェック(異常時はアプリを再起動し、運営者にメール通知) |
@@ -19,6 +19,9 @@
 
 本番では backend と frontend を PM2 で動かし、外部への公開は Cloudflare Tunnel だけで行っています(ポート開放なし)。
 ブラウザの SSH 端末は、利用者ごとに作るリソース制限付きの Docker コンテナに `docker exec` で接続します。
+
+利用者のファイルは、サーバーの HDD 上の利用者ごとのフォルダだけに置きます。Web のストレージ画面も、
+端末(コンテナにそのフォルダをマウント)も、同じフォルダを直接読み書きするので、どちらから見ても同じ内容になります。
 
 ## 開発
 
@@ -46,7 +49,7 @@ e2e テストの手順と注意点は [backend の README](kawamonn-storage/kawa
 ## CI / 監視
 
 - **CI**(`.github/workflows/ci.yml`): `kawamonn-storage/` 以下が変わる push / PR ごとに実行します。
-  - backend: lint・ユニットテスト・e2e テスト(使い捨ての PostgreSQL / Redis / MinIO を起動)・ビルド
+  - backend: lint・ユニットテスト・e2e テスト(使い捨ての PostgreSQL / Redis を起動)・ビルド
   - frontend: lint・テスト・ビルド
   - infra: シェルスクリプトの ShellCheck、Docker Compose ファイルの検証
 - **死活監視**: サーバー内のヘルスチェック(5分ごと)が、アプリの異常を検知して再起動とメール通知を行います。

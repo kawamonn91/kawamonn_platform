@@ -1,6 +1,6 @@
 # kawamonn-storage-backend
 
-Kawamonn の API サーバーです(NestJS 11 / TypeScript / Prisma / BullMQ / MinIO / dockerode)。
+Kawamonn の API サーバーです(NestJS 11 / TypeScript / Prisma / dockerode)。利用者のファイルは HDD の利用者フォルダに直接置きます。
 リポジトリ全体の説明は [ルートの README](../../README.md) を参照してください。
 
 ## セットアップ
@@ -27,7 +27,7 @@ npm ci
 
 ## e2e テスト
 
-e2e テストは本物の PostgreSQL / Redis / MinIO を使います。`docker-compose.test.yml` で
+e2e テストは本物の PostgreSQL / Redis と、一時フォルダ上の利用者フォルダを使います。`docker-compose.test.yml` で
 本番とは別ポートの使い捨てコンテナを起動してから実行してください。
 
 ```bash
