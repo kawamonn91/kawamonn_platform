@@ -4,6 +4,13 @@ import { User, Prisma } from '@prisma/client';
 import * as Docker from 'dockerode';
 import { execFileSync } from 'child_process';
 
+/**
+ * 利用者フォルダを保管して消すスクリプト。root で実行するので sudo の許可が要る(本番の pi は全権を持つ)。
+ * sudo には絶対パスで渡す
+ */
+export const DELETE_USER_SCRIPT =
+  '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/delete_user.sh';
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -12,11 +19,8 @@ export class UsersService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Fully revokes a user's OS-level footprint: stops/removes their SSH sandbox
-   * container(s), then runs delete_user.sh (userdel, group removal, storage
-   * archive+delete). Must be called BEFORE the User row is deleted, since
-   * SshContainer rows cascade-delete with it and this needs them to find the
-   * container IDs to tear down.
+   * 利用者の端末のコンテナを止めて消し、利用者フォルダを保管してから消す(DELETE_USER_SCRIPT)。
+   * SshContainer の行は User の削除に連動して消えるので、User を消す前に呼ぶこと。
    */
   async deprovisionUser(account_name: string): Promise<void> {
     const containers = await this.prisma.sshContainer.findMany({
@@ -36,14 +40,10 @@ export class UsersService {
     }
 
     try {
-      execFileSync('sudo', [
-        '/home/pi/hdd/ssh/kawamonn-storage/kawamonn-storage-backend/scripts/delete_user.sh',
-        account_name,
-        'archive',
-      ]);
+      execFileSync('sudo', [DELETE_USER_SCRIPT, account_name, 'archive']);
     } catch (e) {
       this.logger.error(
-        `OS deprovisioning failed for ${account_name}: ${e.message}`,
+        `User storage cleanup failed for ${account_name}: ${e.message}`,
       );
     }
   }
