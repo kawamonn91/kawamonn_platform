@@ -9,27 +9,12 @@ import { SshModule } from './ssh/ssh.module';
 import { TerminalModule } from './terminal/terminal.module';
 import { FileBrowserModule } from './filebrowser/filebrowser.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
-import { ServeStaticModule } from '@nestjs/serve-static';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
-import { join } from 'path';
 
 @Module({
   imports: [
-    ServeStaticModule.forRoot({
-      rootPath: join(
-        __dirname,
-        '..',
-        '..',
-        'kawamonn-storage-frontend',
-        'dist',
-      ),
-      // Express 5 (bundled by @nestjs/platform-express v11) uses path-to-regexp v8,
-      // which dropped support for the old unnamed-regex-group wildcard syntax
-      // ('/api/(.*)'); {*splat} is the new equivalent that also matches the bare '/api' path.
-      exclude: ['/api/{*splat}'],
-    }),
     ThrottlerModule.forRoot([
       {
         name: 'default',
