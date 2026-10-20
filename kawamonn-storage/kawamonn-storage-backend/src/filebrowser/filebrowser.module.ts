@@ -2,16 +2,9 @@ import { Module } from '@nestjs/common';
 import { FileBrowserController } from './filebrowser.controller';
 import { FileBrowserService } from './filebrowser.service';
 import { StorageUsageService } from './storage-usage.service';
-import { JwtModule } from '@nestjs/jwt';
-import { getJwtSecret } from '../common/jwt-secret';
 
+// ログインの確認は JwtAuthGuard(AuthModule が登録する JwtStrategy)で行うので、ここで JWT の設定は持たない
 @Module({
-  imports: [
-    JwtModule.register({
-      secret: getJwtSecret(),
-      signOptions: { expiresIn: '7d' },
-    }),
-  ],
   controllers: [FileBrowserController],
   providers: [FileBrowserService, StorageUsageService],
   exports: [FileBrowserService, StorageUsageService],

@@ -1,17 +1,11 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
 import { TerminalGateway } from './terminal.gateway';
 import { SshModule } from '../ssh/ssh.module';
-import { getJwtSecret } from '../common/jwt-secret';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [
-    SshModule,
-    JwtModule.register({
-      secret: getJwtSecret(),
-      signOptions: { expiresIn: '7d' },
-    }),
-  ],
+  // JwtService(トークンの検証)は AuthModule の設定をそのまま使う
+  imports: [SshModule, AuthModule],
   providers: [TerminalGateway],
 })
 export class TerminalModule {}

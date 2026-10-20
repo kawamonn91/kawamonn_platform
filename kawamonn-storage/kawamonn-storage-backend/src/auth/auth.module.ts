@@ -18,6 +18,7 @@ import { getJwtSecret } from '../common/jwt-secret';
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
-  exports: [AuthService],
+  // JwtModule も渡し、JWT の設定(秘密鍵・有効期限)をここ1か所にまとめる(TerminalModule が使う)
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}
