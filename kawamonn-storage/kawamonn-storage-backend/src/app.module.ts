@@ -10,7 +10,6 @@ import { TerminalModule } from './terminal/terminal.module';
 import { FileBrowserModule } from './filebrowser/filebrowser.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
@@ -43,17 +42,6 @@ import { join } from 'path';
         limit: 10, // 認証系は厳しく: 1分あたり10リクエスト
       },
     ]),
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST || '127.0.0.1',
-        port: parseInt(process.env.REDIS_PORT || '6379', 10),
-        enableOfflineQueue: false,
-        maxRetriesPerRequest: null,
-        connectTimeout: 5000,
-        lazyConnect: false,
-        retryStrategy: (times) => Math.min(times * 100, 3000),
-      },
-    }),
     PrismaModule,
     AuthModule,
     UsersModule,

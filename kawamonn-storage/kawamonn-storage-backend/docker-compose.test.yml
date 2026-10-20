@@ -10,9 +10,3 @@ services:
       - "5433:5432" # different from production's 5432 on purpose
     tmpfs:
       - /var/lib/postgresql/data # ephemeral: no volume, wiped on every restart
-
-  test-redis:
-    image: redis:7-alpine
-    container_name: kawamonn_test_redis
-    ports:
-      - "6380:6379" # different from production's 6379 on purpose

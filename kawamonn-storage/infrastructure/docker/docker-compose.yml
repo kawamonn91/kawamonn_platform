@@ -16,57 +16,6 @@ services:
     networks:
       - kawamonn-network
 
-  redis:
-    image: redis:7-alpine
-    container_name: kawamonn_redis
-    ports:
-      - "127.0.0.1:6379:6379"
-      - "[::1]:6379:6379"
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    networks:
-      - kawamonn-network
-
-  minio:
-    # MinIO 公式のビルド済みイメージは配布が終わったため、MinIO のソースからビルドされている
-    # Chainguard のイメージを使う。root ではなく UID 65532 で動くので、./minio_data の所有者は 65532 にする
-    image: cgr.dev/chainguard/minio:latest
-    container_name: kawamonn_minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - ./minio_data:/data
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "[::1]:9000:9000"
-      - "127.0.0.1:9001:9001"
-      - "[::1]:9001:9001"
-    command: server /data --console-address ":9001"
-    restart: unless-stopped
-    networks:
-      - kawamonn-network
-
-  minio-init:
-    # 公式の minio/mc も取得できないので、Chainguard の mc を使う(下の entrypoint でシェルを使うため -dev 版)
-    image: cgr.dev/chainguard/minio-client:latest-dev
-    container_name: kawamonn_minio_init
-    depends_on:
-      - minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    entrypoint: >
-      /bin/sh -c "
-      sleep 5;
-      mc alias set kawamonn http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
-      mc mb --ignore-existing kawamonn/storage-bucket;
-      mc anonymous set none kawamonn/storage-bucket;
-      exit 0;
-      "
-    networks:
-      - kawamonn-network
-
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: kawamonn_cloudflared
