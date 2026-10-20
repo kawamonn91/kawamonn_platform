@@ -21,11 +21,11 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 ## 2. 技術スタック(2026年10月時点で動作確認済み)
 
 - **Backend**: NestJS 11(2026年9月にv10/v11混在を解消済み)、TypeScript、Prisma(PostgreSQL)、
-  Redis/BullMQ、dockerode、Passport/JWT、class-validator(MinIO は 2026-10 から利用者のファイルには使っていない。下記)
+  dockerode、Passport/JWT、class-validator。MinIO・Redis/BullMQ は 2026-10 に廃止した(ファイルは HDD の利用者フォルダだけ)
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 22 suites/139 tests + e2e 4 suites/14 tests)、
-  Vitest(frontend: 3 files/23 tests)
+- **テスト**: Jest(backend: unit 22 suites/141 tests + e2e 4 suites/14 tests)、
+  Vitest(frontend: 4 files/25 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
   3ジョブが走る。lint は backend・frontend とも実gate(0件維持)で、backend は `npm run lint:check`(自動修正なし)で判定する。
@@ -34,7 +34,7 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - **死活監視**: Pi 本体や回線の停止は、Cloudflare の通知機能(トンネルの状態の変化をメールで通知)で検知する。
   **GitHub Actions から公開 URL を取得する方式は使えない**(Cloudflare のボット対策がデータセンターの IP を 403 で
   遮断し、Pi まで届かない。2026-10-12 に確認)。そのため一度作った uptime.yml は削除した
-- **デプロイ**: PM2(`kawamonn-storage/ecosystem.config.js`)、Docker Compose(Postgres/Redis/MinIO/cloudflared)、
+- **デプロイ**: PM2(`kawamonn-storage/ecosystem.config.js`)、Docker Compose(Postgres/cloudflared)、
   Cloudflare Tunnel(ポート開放なし)
 
 ## 3. 確定済みの方針(蒸し返さない)
@@ -80,24 +80,21 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   Androidの `MainActivity.java` を誤って巻き込み、**一度もgitにコミットされていなかった**という実害があった
 - **GitHub Actionsの `$GITHUB_ENV` はシェルのクォート除去を行わない。** `.env.test` の値はダブルクォートで
   囲まない(`DATABASE_URL=postgresql://...` のように生の値のまま)
-- **MinIO 公式のビルド済みイメージは配布が終わった。** `minio/minio`(Docker Hub)も `quay.io/minio/minio` も
-  新しく取得できない(2026-10-12 に CI の e2e が取得失敗で落ちて判明)。本番の `docker-compose.yml` も
-  テスト用の `docker-compose.test.yml` も、Chainguard が MinIO のソースからビルドしている `cgr.dev/chainguard/minio:latest` を使う
-  (エントリポイントは `/usr/bin/minio`)。**root ではなく UID 65532 で動くので、`minio_data` の所有者は 65532 にしておく**
-  (所有者が違うと起動に失敗する)。初期化用の `minio-init` は、シェルのある `cgr.dev/chainguard/minio-client:latest-dev` を使う。
-  `docker compose up` で既存イメージを使うときは `--pull never` を付けると、取り直しで失敗しない
+- **MinIO と Redis(BullMQ)は 2026-10-21 に廃止した。** ファイルは HDD の利用者フォルダだけに置き、ジョブのキューも無い。
+  本番の compose は Postgres と cloudflared だけ。テスト用の compose(e2e・CI)は Postgres だけ
 - **ヘルスチェック**(`kawamonn-storage/monitoring/healthcheck.sh`、cron 5分毎)は、
   2026年10月の修正で「公開URLへの疎通確認(`site_ok`)だけが失敗した場合」も、アプリの再起動が
   必要な場合と同じ最大40秒のリトライ待機をしてから失敗確定するようになった。
   それ以前は再起動対象が無いケースだと待機が完全にスキップされ、一時的なCloudflare Tunnelの
   瞬断でも即座にアラートが飛んでいた
 - **Express 5(Nest v11が内部で使用)はpath-to-regexpの構文が変わっている。** 旧来の
-  `exclude: ['/api/(.*)']` のような無名正規表現グループは使えない。`app.module.ts` の
-  `ServeStaticModule` は `'/api/{*splat}'` 構文に修正済み
+  `'/api/(.*)'` のような無名正規表現グループは使えず、`'/api/{*splat}'` のように書く。
+  (以前これを使っていた `ServeStaticModule` は、本番では使われていなかったので 2026-10-21 に削除した。
+  画面は PM2 の `kawamonn-frontend`(vite preview)が配信し、backend には `/api` と `/socket.io` だけが届く)
 - **既存の `プロジェクト説明資料.md` と `運用ガイド.md`(git root直下)は古く、不正確。**
   前者はTOTP二段階認証やファイル共有機能を「実装済み」と記載しているが、実際のコードには存在しない
   (スキーマだけ先行、あるいは依存パッケージのみ導入でコード未実装)。後者はNestJS移行前の
-  Flask/Celeryベースの旧システム向けの手順(systemctl、Celery、Flower等)で、現在のPM2/BullMQ構成とは
+  Flask/Celeryベースの旧システム向けの手順(systemctl、Celery、Flower等)で、現在のPM2構成とは
   一致しない。**この2つは参照しないこと。** 代わりにこのファイルと、正確な技術解説として作成した
   Artifact(https://claude.ai/artifact/Sx4Bvy8ZU6qfyYBM3EAun3)を参照する
 - **PM2 は `ecosystem.config.js` を書き換えただけでは反映されない。** 設定を変えたら
@@ -124,14 +121,15 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - PM2: `kawamonn-backend`(NestJS、`npm run start:prod`、:3000)、
   `kawamonn-frontend`(ビルド済みの dist を `vite preview` で配信、:8080。`/api` と `/socket.io` は
   vite.config の proxy で backend へ転送)。frontend を更新したら `npm run build` してから起動し直す
-- Docker: `kawamonn_db`(Postgres 15)、`kawamonn_redis`、`kawamonn_minio` は **ループバック
-  (`127.0.0.1` と `::1`)だけで公開**し、LAN からは届かない。ほかに `kawamonn_cloudflared`、
-  ユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)
+- Docker: `kawamonn_db`(Postgres 15)は **ループバック(`127.0.0.1` と `::1`)だけで公開**し、LAN からは届かない。
+  ほかに `kawamonn_cloudflared`、ユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)。テーブルは Prisma が作る
+  (`prisma db push`。compose で初回作成用の SQL は読ませていない)
 - **利用者のファイルは HDD の利用者フォルダ(一般の利用者は `/home/pi/hdd/ssh/users/<名前>`、管理者は
   `/home/pi/hdd/ssh/<名前>`)だけに置く**(2026-10-21 に一本化)。Web のストレージ画面も SSH 画面のファイルブラウザも
   `/api/v1/filebrowser`(パス指定)で同じフォルダを直接読み書きし、端末(SSH コンテナ)はそのフォルダをマウントしている。
   以前は MinIO + Postgres にも同じファイルを持って同期していたが(`SyncService`、`/files` API)、同じ HDD の上の二重持ちで
-  食い違いの原因になっていたので廃止した。DB の `File` テーブルは使っていない(残してあるだけ)
+  食い違いの原因になっていたので廃止した。DB の `File`・`FileVersion`・`Share` テーブルと `User.fs_project_id`・
+  `User.two_factor_secret` も 2026-10-21 に削除した
 - 容量の上限: `StorageUsageService` が利用者フォルダの実際の中身(隠しファイルを含む)を起動時と10分ごとに測って
   `User.used_bytes` に保存し、Web からの保存で上限(`quota_bytes`)を超えるなら 413 で断る。端末からの書き込みは制限しない
   (ext4 のプロジェクトクォータは HDD で有効になっていない)
@@ -151,15 +149,18 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   (変わるのは新しく作るコンテナから。既存のコンテナを作り直すと、ホーム以外の場所に入れたものは消える)
 - 期限切れで削除(`status=deleted`)になったユーザーは、行が DB に残っていても、ログイン(`validateUser`。パスワード照合後に
   照合失敗と同じエラーで拒否)・HTTP の認証(`JwtStrategy`)・ブラウザ端末(`terminal.gateway.ts`)のすべてで拒否する
-- MinIO(`kawamonn_minio`)は compose に残っていて動いているが、利用者のファイルには使っていない(2026-10-21 以降)。
-  バケットには匿名アクセスを許可しない(compose の `minio-init` で `mc anonymous set none`)
 - Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
   管理している(`storage.kawamonn.com` → frontend)。リポジトリにトンネルの設定ファイルは置かない
   (以前あった `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていなかったので削除した)
 - **SSH 接続の入口(`ssh.kawamonn.com`)は 2026-10 に廃止した。** 端末はブラウザからだけ使う。利用者のホストの OS アカウントは
-  作らず、端末のコンテナのポートも公開しない
+  作らず(登録・パスワードの変更で useradd・chpasswd などを呼ばない)、端末のコンテナのポートも公開しない。
+  新規登録は DB に利用者を作るだけで、利用者フォルダはファイルブラウザか端末を初めて使うときに作られる
+- **端末のコンテナは起動のたびにホームの所有者を UID 70000 に付け直すので、backend(pi)はホームの ACL で読み書きする。**
+  `entrypoint.sh` が所有者を付け直したあと、`BACKEND_UID`(SshService が渡す backend の UID)と UID 70000 に
+  `rwX` の ACL と default ACL を付ける(イメージに `acl` が要る)。これが無いと、端末を一度開いた利用者のファイルが
+  Web から見えなくなる。利用者の削除は `scripts/delete_user.sh`(sudo、利用者フォルダの保管と削除だけ)
 - モニタリング: `kawamonn-storage/monitoring/healthcheck.sh` が5分毎にcron実行。障害時はPM2再起動を
   試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。Pi 本体や回線が
   止まった場合は、Cloudflare の通知機能(トンネルの状態)でメールが届く
 - 未実装・既知のギャップ(ユーザーに正直に伝えること): ファイル共有機能(DBスキーマのみ先行)、
-  TOTP二段階認証(依存パッケージのみ、未使用)、BullMQのファイル処理ジョブ(スタブのみ)
+  TOTP二段階認証(未実装。依存パッケージも削除済み)

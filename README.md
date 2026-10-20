@@ -13,7 +13,7 @@
 | --- | --- |
 | `kawamonn-storage/kawamonn-storage-backend` | API サーバー(NestJS 11 / Prisma / dockerode) |
 | `kawamonn-storage/kawamonn-storage-frontend` | 画面(React 19 / Vite / Mantine / xterm.js、Capacitor で Android 版も作成) |
-| `kawamonn-storage/infrastructure` | 本番用 Docker Compose(PostgreSQL / Redis / MinIO / Cloudflare Tunnel)、SSH 環境のイメージ |
+| `kawamonn-storage/infrastructure` | 本番用 Docker Compose(PostgreSQL / Cloudflare Tunnel)、SSH 環境のイメージ |
 | `kawamonn-storage/monitoring` | 5分ごとに動くヘルスチェック(異常時はアプリを再起動し、運営者にメール通知) |
 | `.github/workflows` | CI |
 
@@ -49,7 +49,7 @@ e2e テストの手順と注意点は [backend の README](kawamonn-storage/kawa
 ## CI / 監視
 
 - **CI**(`.github/workflows/ci.yml`): `kawamonn-storage/` 以下が変わる push / PR ごとに実行します。
-  - backend: lint・ユニットテスト・e2e テスト(使い捨ての PostgreSQL / Redis を起動)・ビルド
+  - backend: lint・ユニットテスト・e2e テスト(使い捨ての PostgreSQL を起動)・ビルド
   - frontend: lint・テスト・ビルド
   - infra: シェルスクリプトの ShellCheck、Docker Compose ファイルの検証
 - **死活監視**: サーバー内のヘルスチェック(5分ごと)が、アプリの異常を検知して再起動とメール通知を行います。

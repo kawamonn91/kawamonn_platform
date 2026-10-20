@@ -27,7 +27,7 @@ npm ci
 
 ## e2e テスト
 
-e2e テストは本物の PostgreSQL / Redis と、一時フォルダ上の利用者フォルダを使います。`docker-compose.test.yml` で
+e2e テストは本物の PostgreSQL と、一時フォルダ上の利用者フォルダを使います。`docker-compose.test.yml` で
 本番とは別ポートの使い捨てコンテナを起動してから実行してください。
 
 ```bash
