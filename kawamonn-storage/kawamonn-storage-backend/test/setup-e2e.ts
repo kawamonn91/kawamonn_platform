@@ -10,11 +10,21 @@
  * uuid_generate_v4() defaults require, since `prisma db push` does not create
  * extensions on its own.
  */
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
 module.exports = async function globalSetup() {
   dotenv.config({ path: path.join(__dirname, '..', '.env.test') });
+
+  // backend の同期処理は利用者フォルダ(SSH_BASE)を読み書きする。指定が無いと本番と同じ
+  // /home/pi/hdd/ssh を使ってしまうので、e2e では使い捨ての一時フォルダにする
+  if (!process.env.SSH_BASE) {
+    process.env.SSH_BASE = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'kawamonn-e2e-ssh-base-'),
+    );
+  }
 
   const dbUrl = process.env.DATABASE_URL || '';
   if (!dbUrl.includes('kawamonn_test') || !dbUrl.includes(':5433')) {

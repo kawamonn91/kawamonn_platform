@@ -9,19 +9,37 @@ import * as Minio from 'minio';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { isValidAccountName } from '../common/account-name';
+import {
+  safeLstat,
+  safeMkdir,
+  safeReadFile,
+  safeRemove,
+  safeWriteFile,
+  splitRelPath,
+} from './safe-fs';
 
-const SSH_BASE = '/home/pi/hdd/ssh';
+// FileBrowserService と同じく、テストでは一時フォルダに差し替える(src/jest-setup.ts)
+const SSH_BASE = process.env.SSH_BASE || '/home/pi/hdd/ssh';
 const MAX_SYNC_SIZE = 100 * 1024 * 1024; // 100MB
 
-// FS で無視するパターン
-const IGNORED_NAMES = new Set([
-  '.ssh',
-  '.local',
-  '.bash_history',
-  '.bashrc',
-  '.profile',
-  '.bash_logout',
+// SSH_BASE の直下にある、利用者のフォルダではないもの(管理者のフォルダは SSH_BASE の直下にあるので、
+// ここに無い名前は監視する。管理者がこれらの名前にならないことは予約語で保証している)
+const NON_USER_TOP_DIRS = new Set([
+  'kawamonn-storage',
+  'kawamonn-labs',
+  'archives',
 ]);
+
+/**
+ * 同期の対象にする相対パスか。"." で始まる名前(.ssh、.bashrc、.venv など)と node_modules の中は、
+ * どの階層にあっても対象外。パスとして安全でない名前を含むものも対象外。
+ */
+export function isSyncableRelPath(relPath: string): boolean {
+  const parts = splitRelPath(relPath);
+  if (!parts) return false;
+  return parts.every((p) => !p.startsWith('.') && p !== 'node_modules');
+}
 
 @Injectable()
 export class SyncService implements OnModuleInit, OnModuleDestroy {
@@ -64,6 +82,10 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
   // =========================================================
 
   private async getUserHomePath(username: string): Promise<string> {
+    // 利用者名はそのままパスになるので、"." や ".." などは通さない
+    if (!isValidAccountName(username)) {
+      throw new Error(`Invalid account name: ${JSON.stringify(username)}`);
+    }
     const user = await this.prisma.user.findUnique({
       where: { account_name: username },
       select: { role: true },
@@ -80,48 +102,44 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     relPath: string,
     buffer: Buffer,
   ): Promise<void> {
-    const home = await this.getUserHomePath(username);
-    const absPath = path.join(home, relPath);
-    this.markSyncing(absPath);
     try {
-      const dir = path.dirname(absPath);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(absPath, buffer);
+      const home = await this.ensureUserHome(username);
+      this.markSyncing(path.join(home, relPath));
+      safeWriteFile(home, relPath, buffer);
       this.logger.debug(`MinIO→FS write: ${username}/${relPath}`);
     } catch (e) {
-      this.logger.warn(`writeFileToFs failed [${absPath}]: ${e.message}`);
+      this.logger.warn(
+        `writeFileToFs failed [${username}/${relPath}]: ${e.message}`,
+      );
     }
   }
 
   /** MinIO でフォルダが作成されたとき FS にも作成する */
   async createDirInFs(username: string, relPath: string): Promise<void> {
-    const home = await this.getUserHomePath(username);
-    const absPath = path.join(home, relPath);
-    this.markSyncing(absPath);
     try {
-      fs.mkdirSync(absPath, { recursive: true });
+      const home = await this.ensureUserHome(username);
+      this.markSyncing(path.join(home, relPath));
+      safeMkdir(home, relPath);
       this.logger.debug(`MinIO→FS mkdir: ${username}/${relPath}`);
     } catch (e) {
-      this.logger.warn(`createDirInFs failed [${absPath}]: ${e.message}`);
+      this.logger.warn(
+        `createDirInFs failed [${username}/${relPath}]: ${e.message}`,
+      );
     }
   }
 
   /** MinIO からファイル/フォルダが削除されたとき FS からも削除する */
   async deleteFromFs(username: string, relPath: string): Promise<void> {
-    const home = await this.getUserHomePath(username);
-    const absPath = path.join(home, relPath);
-    this.markSyncing(absPath);
     try {
-      if (!fs.existsSync(absPath)) return;
-      const stat = fs.statSync(absPath);
-      if (stat.isDirectory()) {
-        fs.rmSync(absPath, { recursive: true, force: true });
-      } else {
-        fs.unlinkSync(absPath);
-      }
+      const home = await this.getUserHomePath(username);
+      if (!fs.existsSync(home)) return;
+      this.markSyncing(path.join(home, relPath));
+      safeRemove(home, relPath);
       this.logger.debug(`MinIO→FS delete: ${username}/${relPath}`);
     } catch (e) {
-      this.logger.warn(`deleteFromFs failed [${absPath}]: ${e.message}`);
+      this.logger.warn(
+        `deleteFromFs failed [${username}/${relPath}]: ${e.message}`,
+      );
     }
   }
 
@@ -135,20 +153,25 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     username: string,
     relPath: string,
   ): Promise<void> {
-    const home = await this.getUserHomePath(username);
-    const absPath = path.join(home, relPath);
     try {
-      if (!fs.existsSync(absPath)) return;
-      const stat = fs.statSync(absPath);
-      if (!stat.isFile()) return;
-      if (stat.size > MAX_SYNC_SIZE) {
+      if (!isSyncableRelPath(relPath)) return;
+      const home = await this.getUserHomePath(username);
+      const st = safeLstat(home, relPath);
+      if (!st || st.type !== 'file') return;
+      if (st.size > MAX_SYNC_SIZE) {
         this.logger.warn(
-          `File too large to sync [${relPath}]: ${stat.size} bytes`,
+          `File too large to sync [${relPath}]: ${st.size} bytes`,
         );
         return;
       }
-      const buffer = fs.readFileSync(absPath);
-      await this.internalUploadToMinioAndDb(userId, relPath, buffer, stat.size);
+      const file = safeReadFile(home, relPath, MAX_SYNC_SIZE);
+      if (!file) return;
+      await this.internalUploadToMinioAndDb(
+        userId,
+        relPath,
+        file.buffer,
+        file.size,
+      );
     } catch (e) {
       this.logger.error(
         `uploadFsFileToMinio failed [${relPath}]: ${e.message}`,
@@ -243,7 +266,7 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   async syncUserMinioToFs(userId: string, username: string): Promise<void> {
-    const home = await this.getUserHomePath(username);
+    const home = await this.ensureUserHome(username);
     // ディレクトリを先に作成
     const dirs = await this.prisma.file.findMany({
       where: { owner_id: userId, mime_type: 'directory' },
@@ -251,10 +274,15 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     for (const dir of dirs) {
       try {
         const relPath = await this.buildPathFromParent(dir.name, dir.parent_id);
-        const absPath = path.join(home, relPath);
-        if (!fs.existsSync(absPath)) {
-          this.markSyncing(absPath);
-          fs.mkdirSync(absPath, { recursive: true });
+        if (!splitRelPath(relPath)) {
+          this.logger.warn(
+            `Skip unsafe path (dir): ${JSON.stringify(relPath)}`,
+          );
+          continue;
+        }
+        if (!safeLstat(home, relPath)) {
+          this.markSyncing(path.join(home, relPath));
+          safeMkdir(home, relPath);
           this.logger.log(`Synced MinIO→FS (dir): ${username}/${relPath}`);
         }
       } catch (e) {
@@ -277,9 +305,13 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
           file.name,
           file.parent_id,
         );
-        const absPath = path.join(home, relPath);
-
-        if (fs.existsSync(absPath)) continue; // 既存ファイルはスキップ
+        if (!splitRelPath(relPath)) {
+          this.logger.warn(
+            `Skip unsafe path (file): ${JSON.stringify(relPath)}`,
+          );
+          continue;
+        }
+        if (safeLstat(home, relPath)) continue; // 既存(リンクなども含む)はスキップ
 
         const stream = await this.minioClient.getObject(
           this.bucketName,
@@ -293,10 +325,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
         });
         const buffer = Buffer.concat(chunks);
 
-        this.markSyncing(absPath);
-        const dir = path.dirname(absPath);
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(absPath, buffer);
+        this.markSyncing(path.join(home, relPath));
+        safeWriteFile(home, relPath, buffer);
 
         this.logger.log(`Synced MinIO→FS: ${username}/${relPath}`);
       } catch (e) {
@@ -314,17 +344,9 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     const chokidar = require('chokidar');
 
     this.watcher = chokidar.watch(SSH_BASE, {
-      ignored: [
-        /[\/\\]\..+$/, // ドット始まりのファイル/ディレクトリ (.ssh, .bash_history 等)
-        /node_modules/,
-        /kawamonn-storage/, // アプリのソースコードは監視しない
-        // 同一 git root 上に同居する無関係プロジェクト。監視すると権限エラー
-        // (kawamonn-labs の postgres_data で EACCES) や無駄な inotify を生むだけなので除外する。
-        // 管理者のストレージ(SSH_BASE直下の各管理者ディレクトリ)は除外しないよう、
-        // kawamonn-labs と .git のみを対象にする。
-        /[\/\\]kawamonn-labs([\/\\]|$)/,
-        /[\/\\]\.git([\/\\]|$)/,
-      ],
+      ignored: (p: string) => this.isIgnoredWatchPath(p),
+      // 利用者が作ったシンボリックリンクをたどって、利用者フォルダの外を監視・アップロードしないようにする
+      followSymlinks: false,
       persistent: true,
       ignoreInitial: true, // 起動時の既存ファイルでイベントを発火しない
       depth: 15,
@@ -416,16 +438,17 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     username: string,
     relPath: string,
   ): Promise<void> {
-    const home = await this.getUserHomePath(username);
-    const absPath = path.join(home, relPath);
     try {
-      if (!fs.existsSync(absPath)) return;
-      const stat = fs.statSync(absPath);
-      if (!stat.isFile()) return;
-      if (stat.size > MAX_SYNC_SIZE) return;
-
-      const buffer = fs.readFileSync(absPath);
-      await this.internalUploadToMinioAndDb(userId, relPath, buffer, stat.size);
+      const home = await this.getUserHomePath(username);
+      // リンク・特殊なファイル・上限超えは読まない(null になる)
+      const file = safeReadFile(home, relPath, MAX_SYNC_SIZE);
+      if (!file) return;
+      await this.internalUploadToMinioAndDb(
+        userId,
+        relPath,
+        file.buffer,
+        file.size,
+      );
     } catch (e) {
       this.logger.error(
         `internalFsFileToMinio failed [${relPath}]: ${e.message}`,
@@ -538,10 +561,8 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!relPath) return null;
-
-    // 隠しファイルをスキップ
-    if (path.basename(relPath).startsWith('.')) return null;
-    if (IGNORED_NAMES.has(path.basename(relPath))) return null;
+    if (!isValidAccountName(username)) return null;
+    if (!isSyncableRelPath(relPath)) return null;
 
     const user = await this.prisma.user.findFirst({
       where: { account_name: username },
@@ -664,6 +685,25 @@ export class SyncService implements OnModuleInit, OnModuleDestroy {
       '.csv': 'text/csv',
     };
     return map[ext] || 'application/octet-stream';
+  }
+
+  /** 利用者フォルダのパスを返す。無ければ作る(利用者名は getUserHomePath で検証済み) */
+  private async ensureUserHome(username: string): Promise<string> {
+    const home = await this.getUserHomePath(username);
+    fs.mkdirSync(home, { recursive: true });
+    return home;
+  }
+
+  /**
+   * 監視から外すパスか。アプリのソースや別プロジェクトなど、利用者のものではない SSH_BASE 直下のフォルダと、
+   * 同期の対象外の名前("." で始まる名前と node_modules)を含むパスを外す。
+   */
+  private isIgnoredWatchPath(p: string): boolean {
+    const rel = path.relative(SSH_BASE, p);
+    if (rel === '') return false;
+    const parts = rel.split(path.sep);
+    if (NON_USER_TOP_DIRS.has(parts[0])) return true;
+    return parts.some((c) => c.startsWith('.') || c === 'node_modules');
   }
 
   /**
