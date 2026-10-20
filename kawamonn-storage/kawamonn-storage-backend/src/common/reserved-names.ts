@@ -9,6 +9,7 @@
  */
 export const RESERVED_ACCOUNT_NAMES = new Set([
   'kawamonn-storage',
+  'kawamonn-labs',
   'users',
   'archives',
   'admin',

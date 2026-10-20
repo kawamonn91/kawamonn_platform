@@ -125,6 +125,19 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
+    it('rejects an account name that would point outside the user folder ("..")', async () => {
+      mockUsersService.verifyOtp.mockResolvedValue(true);
+      await expect(
+        service.register({
+          email: 'a@u-aizu.ac.jp',
+          password: 'validpassword1',
+          display_name: '..',
+          otp_code: '123456',
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('rejects a reserved account name even with a valid OTP', async () => {
       mockUsersService.verifyOtp.mockResolvedValue(true);
       await expect(

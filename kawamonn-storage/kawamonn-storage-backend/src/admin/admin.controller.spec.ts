@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { AuthService } from '../auth/auth.service';
@@ -39,5 +40,27 @@ describe('AdminController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('createUser', () => {
+    it.each(['..', '.', '-rf'])(
+      'フォルダの外を指したりオプションに見えたりする名前 %j では作らない',
+      async (account_name) => {
+        await expect(
+          controller.createUser({
+            email: 'x@u-aizu.ac.jp',
+            account_name,
+          } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockUsersService.createUser).not.toHaveBeenCalled();
+      },
+    );
+
+    it('名前を省くとメールアドレスの @ の前を使うが、その場合も検査する', async () => {
+      await expect(
+        controller.createUser({ email: '.hidden@example.com' } as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockUsersService.createUser).not.toHaveBeenCalled();
+    });
   });
 });

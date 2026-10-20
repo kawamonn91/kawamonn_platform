@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SyncService } from '../sync/sync.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isValidAccountName } from '../common/account-name';
 
 // SSH_BASE を環境変数で上書き可能にしているのはテスト専用(本番の .env/PM2 設定では
 // 未設定のため、常にデフォルトの実パスに解決される)。filebrowser.service.spec.ts が
@@ -35,6 +36,10 @@ export class FileBrowserService {
    * ホームディレクトリが存在しない場合は作成する。
    */
   private async userRoot(username: string): Promise<string> {
+    // 利用者名はそのままパスになるので、"." や ".." などは通さない
+    if (!isValidAccountName(username)) {
+      throw new ForbiddenException('Invalid account name');
+    }
     const user = await this.prisma.user.findUnique({
       where: { account_name: username },
       select: { role: true },

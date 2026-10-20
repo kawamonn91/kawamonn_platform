@@ -19,6 +19,10 @@ import { execFileSync } from 'child_process';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { isReservedAccountName } from '../common/reserved-names';
+import {
+  ACCOUNT_NAME_RULE_MESSAGE,
+  isValidAccountName,
+} from '../common/account-name';
 
 @Injectable()
 export class AuthService {
@@ -125,6 +129,9 @@ export class AuthService {
       (registerDto.display_name || '').trim() ||
       registerDto.email.split('@')[0];
 
+    if (!isValidAccountName(account_name)) {
+      throw new BadRequestException(ACCOUNT_NAME_RULE_MESSAGE);
+    }
     if (isReservedAccountName(account_name)) {
       throw new ConflictException(
         'This account name is reserved and cannot be used.',

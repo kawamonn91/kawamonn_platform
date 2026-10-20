@@ -18,7 +18,8 @@ import { SyncService } from '../sync/sync.service';
  * The test directory is removed in afterAll.
  */
 const SSH_BASE = process.env.SSH_BASE as string;
-const TEST_USERNAME = `__filebrowser_spec_${process.pid}_${Date.now()}__`;
+// 利用者名の規則(先頭は英数字、32 文字まで)に合う名前にする
+const TEST_USERNAME = `fbspec${process.pid}x${Date.now().toString(36)}`;
 const testRoot = path.join(SSH_BASE, TEST_USERNAME);
 const OUTSIDE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-outside-'));
 

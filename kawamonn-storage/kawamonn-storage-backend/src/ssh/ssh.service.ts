@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import * as Docker from 'dockerode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { isValidAccountName } from '../common/account-name';
 
 @Injectable()
 export class SshService {
@@ -17,6 +18,10 @@ export class SshService {
   }
 
   async provisionContainer(username: string, publicKey: string = '') {
+    // 利用者名はそのままマウントするフォルダのパスになるので、"." や ".." などは通さない
+    if (!isValidAccountName(username)) {
+      throw new InternalServerErrorException('Invalid account name');
+    }
     const containerName = `kawamonn-ssh-${username}-${Math.random().toString(36).slice(-6)}`;
     const memoryLimit = 512 * 1024 * 1024; // 512MB
 

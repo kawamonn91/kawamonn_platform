@@ -8,6 +8,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SyncService } from '../sync/sync.service';
 import * as Minio from 'minio';
 import { v4 as uuidv4 } from 'uuid';
+import { isSafeFileName } from '../common/file-name';
+
+// 名前は利用者フォルダの中のパスになるので、"/" や ".." などを含む名前は受け付けない
+function assertSafeName(name: unknown): asserts name is string {
+  if (!isSafeFileName(name)) {
+    throw new BadRequestException('Invalid file or folder name');
+  }
+}
 
 @Injectable()
 export class FilesService {
@@ -38,6 +46,7 @@ export class FilesService {
     file.originalname = Buffer.from(file.originalname, 'latin1').toString(
       'utf8',
     );
+    assertSafeName(file.originalname);
 
     // If parentId is provided, verify it exists and is a directory
     if (parentId) {
@@ -117,6 +126,14 @@ export class FilesService {
   }
 
   async createFolder(userId: string, name: string, parentId?: string) {
+    assertSafeName(name);
+    // 親フォルダが自分のものであることを確かめる(他人のフォルダの中には作らせない)
+    if (parentId) {
+      const parent = await this.prisma.file.findFirst({
+        where: { id: parentId, owner_id: userId, mime_type: 'directory' },
+      });
+      if (!parent) throw new NotFoundException('Parent folder not found');
+    }
     const folder = await this.prisma.file.create({
       data: {
         owner_id: userId,
@@ -247,7 +264,10 @@ export class FilesService {
     const buffer = Buffer.from(content || '', 'utf8');
 
     // Require valid name
-    if (!name.trim()) throw new BadRequestException('Filename required');
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new BadRequestException('Filename required');
+    }
+    assertSafeName(name);
 
     // Validate parent
     if (parentId) {

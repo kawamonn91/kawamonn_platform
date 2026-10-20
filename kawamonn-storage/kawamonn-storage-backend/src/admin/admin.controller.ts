@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
@@ -23,6 +24,10 @@ import { BroadcastDto } from './dto/broadcast.dto';
 import * as bcrypt from 'bcrypt';
 import { generateTempPassword } from '../common/random-password';
 import { isReservedAccountName } from '../common/reserved-names';
+import {
+  ACCOUNT_NAME_RULE_MESSAGE,
+  isValidAccountName,
+} from '../common/account-name';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -55,6 +60,9 @@ export class AdminController {
   @Post('users')
   async createUser(@Body() body: CreateUserDto) {
     const account_name = body.account_name || body.email.split('@')[0];
+    if (!isValidAccountName(account_name)) {
+      throw new BadRequestException(ACCOUNT_NAME_RULE_MESSAGE);
+    }
     if (isReservedAccountName(account_name)) {
       throw new ConflictException(
         'This account name is reserved and cannot be used.',

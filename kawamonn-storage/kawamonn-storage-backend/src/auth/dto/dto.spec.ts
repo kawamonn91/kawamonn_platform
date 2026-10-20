@@ -72,6 +72,26 @@ describe('RegisterDto', () => {
     expect(errors.some((e) => e.property === 'display_name')).toBe(true);
   });
 
+  it.each(['..', '.', '.hidden', '-rf', 'a'.repeat(33)])(
+    'rejects a display_name that cannot safely be a folder name: %j',
+    async (display_name) => {
+      const errors = await validate(
+        plainToInstance(RegisterDto, { ...valid, display_name }),
+      );
+      expect(errors.some((e) => e.property === 'display_name')).toBe(true);
+    },
+  );
+
+  it.each(['k.hikaru0113', 'S1320207', 'test_cross_power', 'a..b'])(
+    'accepts an existing-style display_name: %j',
+    async (display_name) => {
+      const errors = await validate(
+        plainToInstance(RegisterDto, { ...valid, display_name }),
+      );
+      expect(errors.some((e) => e.property === 'display_name')).toBe(false);
+    },
+  );
+
   it('rejects a malformed email', async () => {
     const errors = await validate(
       plainToInstance(RegisterDto, { ...valid, email: 'nope' }),

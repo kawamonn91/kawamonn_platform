@@ -3,6 +3,7 @@ import { FilesService } from './files.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SyncService } from '../sync/sync.service';
 import * as Minio from 'minio';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 jest.mock('minio', () => ({
   Client: jest.fn().mockImplementation(() => ({
@@ -146,6 +147,54 @@ describe('FilesService', () => {
       expect(mockPrisma.file.delete).toHaveBeenCalledWith({
         where: { id: 'folder-1' },
       });
+    });
+  });
+
+  describe('名前の検査(利用者フォルダの外を指す名前は受け付けない)', () => {
+    it.each(['..', '../x', 'a/b', 'a\\b', ''])(
+      'createFolder は %j を拒否し、DB にも FS にも触れない',
+      async (name) => {
+        await expect(service.createFolder('u1', name)).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockPrisma.file.create).not.toHaveBeenCalled();
+        expect(mockSyncService.createDirInFs).not.toHaveBeenCalled();
+      },
+    );
+
+    it('createFolder は他人のフォルダの中には作らない', async () => {
+      mockPrisma.file.findFirst.mockResolvedValue(null);
+      await expect(
+        service.createFolder('u1', 'ok', 'someone-elses-folder'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.file.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'someone-elses-folder',
+          owner_id: 'u1',
+          mime_type: 'directory',
+        },
+      });
+      expect(mockPrisma.file.create).not.toHaveBeenCalled();
+    });
+
+    it('createTextFile は "/" を含む名前を拒否する', async () => {
+      await expect(
+        service.createTextFile('u1', '../../.ssh/authorized_keys', 'x'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.file.create).not.toHaveBeenCalled();
+    });
+
+    it('uploadFile は ".." を含むファイル名を拒否する', async () => {
+      const file = {
+        originalname: '../../evil.txt',
+        buffer: Buffer.from('x'),
+        size: 1,
+        mimetype: 'text/plain',
+      } as Express.Multer.File;
+      await expect(service.uploadFile('u1', file)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockPrisma.file.create).not.toHaveBeenCalled();
     });
   });
 });

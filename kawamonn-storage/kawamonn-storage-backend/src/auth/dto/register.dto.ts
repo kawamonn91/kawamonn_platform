@@ -7,6 +7,10 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
+import {
+  ACCOUNT_NAME_PATTERN,
+  ACCOUNT_NAME_RULE_MESSAGE,
+} from '../../common/account-name';
 
 export class RegisterDto {
   @IsEmail()
@@ -22,9 +26,7 @@ export class RegisterDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[a-zA-Z0-9_.-]+$/, {
-    message: 'Username can only contain letters, numbers, and _ . -',
-  })
+  @Matches(ACCOUNT_NAME_PATTERN, { message: ACCOUNT_NAME_RULE_MESSAGE })
   display_name: string;
 
   @IsOptional()
