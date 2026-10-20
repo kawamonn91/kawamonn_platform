@@ -12,7 +12,6 @@ model User {
   account_name  String         @unique @db.VarChar(255)
   email         String         @unique @db.VarChar(255)
   password_hash String         @db.VarChar(255)
-  two_factor_secret String?    @db.VarChar(255)
   role          String         @default("user") @db.VarChar(50)
   quota_bytes   BigInt         @default(21474836480)
   used_bytes    BigInt         @default(0)
@@ -20,56 +19,13 @@ model User {
   updated_at    DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
   // Lifecycle management (migrated from Flask kawamonn_platform)
   status               String     @default("active") @db.VarChar(20)
-  fs_project_id        Int?       @unique
   expiry_at            DateTime?  @db.Timestamptz(6)
   last_reminder_sent   DateTime?  @db.Timestamptz(6)
   password_last_set_at DateTime?  @default(now()) @db.Timestamptz(6)
-  files         File[]         @relation("FileOwner")
-  shares        Share[]        @relation("ShareCreator")
   audit_logs    AuditLog[]     @relation("AuditActor")
   ssh_containers SshContainer[]
   password_reset_tokens PasswordResetToken[]
   mail_send_logs MailSendLog[]
-}
-
-model File {
-  id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  owner_id    String        @db.Uuid
-  parent_id   String?       @db.Uuid
-  name        String        @db.VarChar(255)
-  size        BigInt
-  mime_type   String        @db.VarChar(100)
-  storage_key String?       @db.VarChar(500)
-  version     Int           @default(1)
-  created_at  DateTime      @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
-  owner       User          @relation("FileOwner", fields: [owner_id], references: [id], onDelete: Cascade)
-  parent      File?         @relation("FileHierarchy", fields: [parent_id], references: [id], onDelete: Cascade)
-  children    File[]        @relation("FileHierarchy")
-  versions    FileVersion[]
-  shares      Share[]
-}
-
-model FileVersion {
-  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  file_id        String   @db.Uuid
-  storage_key    String   @db.VarChar(500)
-  version_number Int
-  created_at     DateTime @default(now()) @db.Timestamptz(6)
-  file           File     @relation(fields: [file_id], references: [id], onDelete: Cascade)
-}
-
-model Share {
-  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  file_id       String    @db.Uuid
-  token         String    @unique @db.VarChar(255)
-  expires_at    DateTime? @db.Timestamptz(6)
-  password_hash String?   @db.VarChar(255)
-  max_downloads Int?
-  created_by    String    @db.Uuid
-  created_at    DateTime  @default(now()) @db.Timestamptz(6)
-  file          File      @relation(fields: [file_id], references: [id], onDelete: Cascade)
-  creator       User      @relation("ShareCreator", fields: [created_by], references: [id], onDelete: Cascade)
 }
 
 model AuditLog {
