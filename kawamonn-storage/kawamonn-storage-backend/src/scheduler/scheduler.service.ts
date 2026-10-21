@@ -153,6 +153,24 @@ export class SchedulerService {
   }
 
   /**
+   * 毎日 04:30 — 期限の切れた確認コードと、使い終わった・期限の切れたパスワード再設定用のトークンを消す
+   * (以前は消しておらず、溜まる一方だった)
+   */
+  @Cron('30 4 * * *', { timeZone: 'Asia/Tokyo' })
+  async purgeExpiredCodes() {
+    const now = new Date();
+    const [otp, tokens] = await Promise.all([
+      this.prisma.otpCode.deleteMany({ where: { expires_at: { lt: now } } }),
+      this.prisma.passwordResetToken.deleteMany({
+        where: { OR: [{ used: true }, { expires_at: { lt: now } }] },
+      }),
+    ]);
+    this.logger.log(
+      `Purged ${otp.count} expired OTP codes and ${tokens.count} reset tokens.`,
+    );
+  }
+
+  /**
    * Daily at 10:00 JST — Cleanup expired user accounts
    * Migrated from: Celery task check_cleanup() in tasks.py
    */
