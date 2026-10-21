@@ -14,7 +14,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
@@ -679,6 +679,10 @@ export default function SshDashboard() {
     const fitAddonRef = useRef<FitAddon | null>(null);
     const socketRef = useRef<Socket | null>(null);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
+    // キー入力をコンテナへ送る登録。セッションごとに作り直す(残すと、接続し直すたびに登録が重なる)
+    const inputListenerRef = useRef<IDisposable | null>(null);
+    // 今のセッションがつながっているか(socket のイベントの中から読むので、state ではなく ref で持つ)
+    const connectedRef = useRef(false);
 
     // ----------------------------------------------
     // コンテナステータス取得
@@ -794,6 +798,13 @@ export default function SshDashboard() {
     // ----------------------------------------------
     // WebSocket 接続＆ターミナル起動
     // ----------------------------------------------
+    // セッションの後片付け(キー入力の登録を外す)
+    const endSession = useCallback(() => {
+        connectedRef.current = false;
+        inputListenerRef.current?.dispose();
+        inputListenerRef.current = null;
+    }, []);
+
     const handleLaunch = useCallback(async () => {
         setSessionState('starting');
         setErrorMsg('');
@@ -803,6 +814,10 @@ export default function SshDashboard() {
             navigate('/login');
             return;
         }
+
+        // 前の接続(エラーで終わったものなど)が残っていれば閉じてから
+        socketRef.current?.disconnect();
+        endSession();
 
         // Socket.io 接続
         const socket = io('/terminal', {
@@ -822,12 +837,14 @@ export default function SshDashboard() {
 
         socket.on('ready', () => {
             setSessionState('connected');
+            connectedRef.current = true;
             fetchStatus();
 
             // キー入力をコンテナに送信
-            xtermRef.current?.onData((data) => {
+            inputListenerRef.current?.dispose();
+            inputListenerRef.current = xtermRef.current?.onData((data) => {
                 socket.emit('input', { input: data });
-            });
+            }) ?? null;
         });
 
         socket.on('output', (data: string) => {
@@ -835,6 +852,7 @@ export default function SshDashboard() {
         });
 
         socket.on('session_ended', () => {
+            endSession();
             setSessionState('idle');
             xtermRef.current?.writeln('\r\n\x1b[33m[Session ended. Press "Launch Terminal" to reconnect.]\x1b[0m');
         });
@@ -850,25 +868,27 @@ export default function SshDashboard() {
         });
 
         socket.on('disconnect', (reason) => {
-            if (sessionState === 'connected') {
+            if (connectedRef.current) {
                 xtermRef.current?.writeln(`\r\n\x1b[31m[Disconnected: ${reason}]\x1b[0m`);
             }
+            endSession();
             setSessionState('idle');
         });
-    }, [navigate, fetchStatus, sessionState]);
+    }, [navigate, fetchStatus, endSession]);
 
     // ----------------------------------------------
     // セッション切断
     // ----------------------------------------------
     const handleDisconnect = useCallback(() => {
         setSessionState('disconnecting');
+        endSession();
         if (socketRef.current) {
             socketRef.current.emit('disconnect_session');
             socketRef.current.disconnect();
             socketRef.current = null;
         }
         setSessionState('idle');
-    }, []);
+    }, [endSession]);
 
     // ----------------------------------------------
     // UI ヘルパー

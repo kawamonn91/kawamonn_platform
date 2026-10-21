@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import * as Docker from 'dockerode';
 import { Duplex } from 'stream';
+import { StringDecoder } from 'string_decoder';
 import { ALLOWED_ORIGINS } from '../common/allowed-origins';
 
 interface TerminalSession {
@@ -39,6 +40,8 @@ export class TerminalGateway
   private readonly logger = new Logger(TerminalGateway.name);
   // クライアントIDとセッション情報のマッピング
   private sessions = new Map<string, TerminalSession>();
+  // 開始の途中のクライアント(「開始」が続けて届いても、セッションは1つだけ作る)
+  private starting = new Set<string>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -94,16 +97,20 @@ export class TerminalGateway
   // --------------------------------------------------
   // 切断時: PTYセッションを終了する
   // --------------------------------------------------
-  async handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket) {
     this.logger.log(`[${client.id}] 切断: ユーザー=${client.data.username}`);
-    const session = this.sessions.get(client.id);
-    if (session) {
-      try {
-        session.stream.destroy();
-      } catch {
-        /* ignore */
-      }
-      this.sessions.delete(client.id);
+    this.endSession(client.id);
+  }
+
+  /** PTY セッションを閉じる(無ければ何もしない) */
+  private endSession(clientId: string) {
+    const session = this.sessions.get(clientId);
+    if (!session) return;
+    this.sessions.delete(clientId);
+    try {
+      session.stream.destroy();
+    } catch {
+      /* すでに閉じている */
     }
   }
 
@@ -120,11 +127,12 @@ export class TerminalGateway
       throw new WsException('Unauthorized');
     }
 
-    // すでにセッションが存在する場合は何もしない
-    if (this.sessions.has(client.id)) {
+    // すでにセッションがある(または開始の途中)なら何もしない
+    if (this.sessions.has(client.id) || this.starting.has(client.id)) {
       client.emit('output', '\r\n[Terminal already running]\r\n');
       return;
     }
+    this.starting.add(client.id);
 
     try {
       client.emit('output', '\r\nStarting your sandbox environment...\r\n');
@@ -133,29 +141,36 @@ export class TerminalGateway
       const containerId =
         await this.sshService.ensureContainerRunning(username);
 
-      const cols = data?.cols || 80;
-      const rows = data?.rows || 24;
-
-      // PTY セッション開始
       const { exec, stream } = await this.sshService.createExecSession(
         containerId,
         username,
-        cols,
-        rows,
+        clampSize(data?.cols, 80),
+        clampSize(data?.rows, 24),
       );
 
+      // 用意している間に画面が閉じられていたら、作ったセッションをすぐ閉じる
+      if (!client.connected) {
+        (stream as unknown as Duplex).destroy();
+        return;
+      }
       this.sessions.set(client.id, {
         exec,
         stream: stream as unknown as Duplex,
         username,
       });
 
-      // コンテナ出力 → クライアントへストリーミング
+      // コンテナの出力はバイト列(UTF-8)。文字の途中で区切られて届くことがあるので、
+      // StringDecoder で続きを待ってから文字に直して送る(xterm.js は文字列を UTF-16 の文字として表示する。
+      // 以前は 1 バイトを 1 文字にした文字列を送っていて、日本語が化けていた)
+      const decoder = new StringDecoder('utf8');
       stream.on('data', (chunk: Buffer) => {
-        client.emit('output', chunk.toString('binary'));
+        const text = decoder.write(chunk);
+        if (text) client.emit('output', text);
       });
 
       stream.on('end', () => {
+        const rest = decoder.end();
+        if (rest) client.emit('output', rest);
         client.emit('output', '\r\n[Session ended]\r\n');
         this.sessions.delete(client.id);
         client.emit('session_ended');
@@ -174,6 +189,8 @@ export class TerminalGateway
       this.logger.error(`[${client.id}] セッション開始失敗: ${err.message}`);
       client.emit('output', `\r\n[Error: ${err.message}]\r\n`);
       client.emit('error', { message: err.message });
+    } finally {
+      this.starting.delete(client.id);
     }
   }
 
@@ -186,7 +203,7 @@ export class TerminalGateway
     @MessageBody() data: { input: string },
   ) {
     const session = this.sessions.get(client.id);
-    if (!session) return;
+    if (!session || typeof data?.input !== 'string') return;
 
     try {
       session.stream.write(data.input);
@@ -207,7 +224,10 @@ export class TerminalGateway
     if (!session) return;
 
     try {
-      await session.exec.resize({ w: data.cols, h: data.rows });
+      await session.exec.resize({
+        w: clampSize(data?.cols, 80),
+        h: clampSize(data?.rows, 24),
+      });
     } catch {
       // resize は非クリティカル
     }
@@ -218,13 +238,14 @@ export class TerminalGateway
   // --------------------------------------------------
   @SubscribeMessage('disconnect_session')
   handleDisconnectSession(@ConnectedSocket() client: Socket) {
-    const session = this.sessions.get(client.id);
-    if (session) {
-      try {
-        session.stream.destroy();
-      } catch {}
-      this.sessions.delete(client.id);
-    }
+    this.endSession(client.id);
     client.emit('session_ended');
   }
+}
+
+/** 画面から届いた端末の列数・行数を、1〜1000 の整数にそろえる(おかしな値なら既定値) */
+function clampSize(value: unknown, fallback: number): number {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(n, 1000);
 }
