@@ -9,6 +9,16 @@ import * as fs from 'fs';
 import { isValidAccountName } from '../common/account-name';
 import { userHomePath } from '../common/user-home';
 
+/**
+ * 端末のコンテナ専用のネットワーク。ホストのファイアウォール(/etc/host-firewall.nft の inet host_fw)が、
+ * このブリッジ(kw-sandbox)から Pi 本体・家の LAN・内部向けの宛先への通信を止め、インターネットにだけ出られるようにしている。
+ * コンテナ同士の通信(enable_icc)も止める。名前解決は、閉じる側の網にあるホストの DNS ではなく公開の DNS を使う。
+ */
+export const SANDBOX_NETWORK = 'kawamonn-sandbox';
+export const SANDBOX_BRIDGE = 'kw-sandbox';
+const SANDBOX_SUBNET = '172.30.0.0/24';
+const SANDBOX_DNS = ['1.1.1.1', '1.0.0.1'];
+
 @Injectable()
 export class SshService {
   private docker: Docker;
@@ -36,6 +46,7 @@ export class SshService {
     }
 
     try {
+      await this.ensureSandboxNetwork();
       const container = await this.docker.createContainer({
         Image: 'kawamonn-ssh-base:latest',
         name: containerName,
@@ -45,6 +56,8 @@ export class SshService {
           CpuQuota: 50000, // 50% CPU
           CpuPeriod: 100000,
           Binds: [`${hostMountPath}:/home/${username}:rw`],
+          NetworkMode: SANDBOX_NETWORK,
+          Dns: SANDBOX_DNS,
           // ブラウザの端末は docker exec で接続するので、コンテナのポートはどこにも公開しない
           // (2026-10 に SSH 接続の入口を廃止した。以前は 22 番を 127.0.0.1 に公開していた)
           RestartPolicy: { Name: 'unless-stopped' },
@@ -111,6 +124,30 @@ export class SshService {
     }
   }
 
+  /** 端末のコンテナ専用のネットワークが無ければ作る(同時に作ろうとして重なったときは、そのまま使う) */
+  private async ensureSandboxNetwork(): Promise<void> {
+    try {
+      await this.docker.getNetwork(SANDBOX_NETWORK).inspect();
+      return;
+    } catch (e) {
+      if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+    }
+    try {
+      await this.docker.createNetwork({
+        Name: SANDBOX_NETWORK,
+        Driver: 'bridge',
+        EnableIPv6: false,
+        IPAM: { Config: [{ Subnet: SANDBOX_SUBNET }] },
+        Options: {
+          'com.docker.network.bridge.name': SANDBOX_BRIDGE,
+          'com.docker.network.bridge.enable_icc': 'false',
+        },
+      });
+    } catch (e) {
+      if ((e as { statusCode?: number }).statusCode !== 409) throw e;
+    }
+  }
+
   /**
    * コンテナが存在しなければプロビジョニング、停止中なら起動する。
    * 起動済みのコンテナIDを返す。
@@ -130,6 +167,16 @@ export class SshService {
     const container = this.docker.getContainer(dbContainer.container_id);
     try {
       const data = await container.inspect();
+      // 専用のネットワークに入っていない(以前に作った)コンテナは、作り直す。ホームのファイルはそのまま残る
+      if (
+        !Object.keys(data.NetworkSettings?.Networks ?? {}).includes(
+          SANDBOX_NETWORK,
+        )
+      ) {
+        await container.remove({ force: true });
+        const newContainer = await this.provisionContainer(username);
+        return newContainer.container_id;
+      }
       if (data.State.Status !== 'running') {
         await container.start();
         await this.prisma.sshContainer.update({

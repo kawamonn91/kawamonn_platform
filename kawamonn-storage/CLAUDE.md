@@ -24,7 +24,7 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   dockerode、Passport/JWT、class-validator。MinIO・Redis/BullMQ は 2026-10 に廃止した(ファイルは HDD の利用者フォルダだけ)
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 23 suites/144 tests + e2e 4 suites/14 tests)、
+- **テスト**: Jest(backend: unit 23 suites/148 tests + e2e 4 suites/14 tests)、
   Vitest(frontend: 4 files/25 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
@@ -161,6 +161,11 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - **SSH 接続の入口(`ssh.kawamonn.com`)は 2026-10 に廃止した。** 端末はブラウザからだけ使う。利用者のホストの OS アカウントは
   作らず(登録・パスワードの変更で useradd・chpasswd などを呼ばない)、端末のコンテナのポートも公開しない。
   新規登録は DB に利用者を作るだけで、利用者フォルダはファイルブラウザか端末を初めて使うときに作られる
+- **端末のコンテナは専用の Docker ネットワーク `kawamonn-sandbox`(ブリッジ名 `kw-sandbox`、172.30.0.0/24、IPv6 なし、
+  コンテナ同士の通信なし)に入れる**(SshService が無ければ作る。名前解決は公開の DNS 1.1.1.1・1.0.0.1)。
+  ホストのファイアウォール(リポジトリの外の `/etc/host-firewall.nft`)が `kw-sandbox` からの通信を、インターネット以外
+  (Pi 本体のサービス、家の LAN、内部向けの宛先)は止める。**ブリッジ名やアドレスの範囲を変えるときは、
+  ファイアウォールの規則も合わせて変えること。** 専用のネットワークに入っていない以前のコンテナは、次に端末を開いたときに作り直す
 - **端末のコンテナは起動のたびにホームの所有者を UID 70000 に付け直すので、backend(pi)はホームの ACL で読み書きする。**
   `entrypoint.sh` が所有者を付け直したあと、`BACKEND_UID`(SshService が渡す backend の UID)と UID 70000 に
   `rwX` の ACL と default ACL を付ける(イメージに `acl` が要る)。これが無いと、端末を一度開いた利用者のファイルが
