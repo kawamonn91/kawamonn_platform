@@ -5,28 +5,17 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
-import * as nodemailer from 'nodemailer';
+import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcrypt';
 import { generateTempPassword } from '../common/random-password';
 
 @Injectable()
 export class AdminService {
-  private transporter: nodemailer.Transporter;
-
   constructor(
     private prisma: PrismaService,
     private usersService: UsersService,
-  ) {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '465', 10),
-      secure: true,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
+    private mail: MailService,
+  ) {}
 
   async listUsers(search?: string, page: number = 1, perPage: number = 20) {
     const skip = (page - 1) * perPage;
@@ -232,8 +221,8 @@ export class AdminService {
 
       if (emails.length === 0) return { status: 'No users to email' };
 
-      await this.transporter.sendMail({
-        from: `"Kawamonn Platform Admin" <${process.env.SMTP_USER}>`,
+      await this.mail.send({
+        fromName: 'Kawamonn Platform Admin',
         bcc: emails,
         subject: subject,
         text: message,

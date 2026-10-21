@@ -13,9 +13,9 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 import * as argon2 from 'argon2';
-import * as nodemailer from 'nodemailer';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { Prisma } from '@prisma/client';
 import { isReservedAccountName } from '../common/reserved-names';
 import {
@@ -23,28 +23,19 @@ import {
   isValidAccountName,
 } from '../common/account-name';
 
+/** 管理者ログインの確認コードの送り先。どの管理者のログインでも運営者に送る(運営者の決定) */
+const ADMIN_OTP_TO = 'kawamonn91@gmail.com';
+
 @Injectable()
 export class AuthService {
-  private transporter: nodemailer.Transporter;
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
     private prisma: PrismaService,
-  ) {
-    const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: smtpPort,
-      // 465 番は最初から TLS、それ以外(587 など)は STARTTLS。monitoring/mailer.js と同じ扱い
-      secure: smtpPort === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
+    private mail: MailService,
+  ) {}
 
   async validateUser(account_name: string, pass: string): Promise<any> {
     const user = await this.usersService.findByAccountName(account_name);
@@ -103,9 +94,9 @@ export class AuthService {
     const code = crypto.randomInt(100000, 1000000).toString();
     await this.usersService.createOtp(email, code);
 
-    await this.transporter.sendMail({
-      from: `"UoA Online" <${process.env.SMTP_USER}>`,
-      to: email, // Routes over Postfix to local inbox or via relay
+    await this.mail.send({
+      fromName: 'UoA Online',
+      to: email,
       subject: 'Your Registration OTP',
       text: `Your Kawamonn verification code is: ${code}`,
     });
@@ -243,9 +234,9 @@ export class AuthService {
     const code = crypto.randomInt(100000, 1000000).toString();
     await this.usersService.createOtp(user.email, code);
 
-    await this.transporter.sendMail({
-      from: `"Kawamonn Security" <${process.env.SMTP_USER}>`,
-      to: 'kawamonn91@gmail.com', // User requested all admin OTPs sent to this specific address
+    await this.mail.send({
+      fromName: 'Kawamonn Security',
+      to: ADMIN_OTP_TO,
       subject: 'Admin Login OTP',
       text: `An admin login attempt to ${user.account_name}. Verification code is: ${code}`,
     });
@@ -344,15 +335,15 @@ export class AuthService {
     const resetLink = `https://storage.kawamonn.com/reset?token=${resetToken}`;
 
     try {
-      await this.transporter.sendMail({
-        from: `"UoA Online" <${process.env.SMTP_USER}>`,
+      await this.mail.send({
+        fromName: 'UoA Online',
         to: normalizedEmail,
         subject: 'Password Reset Request',
         text: `Please click the link below to securely reset your password. This link will expire in 1 hour.\n\n${resetLink}`,
         html: `<p>Please click the link below to securely reset your password. This link will expire in 1 hour.</p><p><a href="${resetLink}"><strong>Reset Password</strong></a></p>`,
       });
     } catch (error) {
-      console.error('Failed to send password reset email:', error);
+      this.logger.error('Failed to send password reset email', error);
     }
 
     return {
@@ -406,8 +397,8 @@ export class AuthService {
       },
     });
 
-    await this.transporter.sendMail({
-      from: `"UoA Online / Kawamonn Storage" <${process.env.SMTP_USER}>`,
+    await this.mail.send({
+      fromName: 'UoA Online / Kawamonn Storage',
       to: resetRecord.user.email,
       subject: 'Your Password Has Been Reset',
       text: `Your password was successfully reset just now.\n\nIf you did not perform this action, please contact support immediately.`,

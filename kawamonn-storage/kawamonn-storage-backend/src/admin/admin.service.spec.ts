@@ -3,9 +3,7 @@ import { AdminService } from './admin.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 
-jest.mock('nodemailer', () => ({
-  createTransport: jest.fn().mockReturnValue({ sendMail: jest.fn() }),
-}));
+import { MailService } from '../mail/mail.service';
 
 const mockPrisma = {
   user: {
@@ -32,6 +30,7 @@ describe('AdminService', () => {
         AdminService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: UsersService, useValue: mockUsersService },
+        { provide: MailService, useValue: { send: jest.fn() } },
       ],
     }).compile();
 

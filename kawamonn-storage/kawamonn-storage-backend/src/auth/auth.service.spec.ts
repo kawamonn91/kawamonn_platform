@@ -10,15 +10,7 @@ import {
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import * as bcrypt from 'bcrypt';
-import * as nodemailer from 'nodemailer';
-
-// AuthService's constructor calls nodemailer.createTransport() unconditionally —
-// mock the module so no real SMTP transport (or env var read) happens in tests.
-jest.mock('nodemailer', () => ({
-  createTransport: jest
-    .fn()
-    .mockReturnValue({ sendMail: jest.fn().mockResolvedValue(undefined) }),
-}));
+import { MailService } from '../mail/mail.service';
 
 jest.mock('argon2');
 jest.mock('bcrypt');
@@ -29,6 +21,8 @@ const mockUsersService = {
   createOtp: jest.fn(),
   verifyOtp: jest.fn(),
 };
+
+const mockMail = { send: jest.fn().mockResolvedValue(undefined) };
 
 const mockJwtService = {
   sign: jest.fn().mockReturnValue('signed.jwt.token'),
@@ -63,6 +57,7 @@ describe('AuthService', () => {
         { provide: UsersService, useValue: mockUsersService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: MailService, useValue: mockMail },
       ],
     }).compile();
 
@@ -71,32 +66,6 @@ describe('AuthService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  describe('メール送信の設定', () => {
-    const original = process.env.SMTP_PORT;
-    afterEach(() => {
-      process.env.SMTP_PORT = original;
-    });
-
-    it.each([
-      ['465', true],
-      ['587', false],
-    ])(
-      'SMTP_PORT=%s なら secure=%s(465 番だけ最初から TLS)',
-      (port, secure) => {
-        process.env.SMTP_PORT = port;
-        new AuthService(
-          mockUsersService as any,
-          mockJwtService as any,
-          mockPrisma as any,
-        );
-        const opts = (nodemailer.createTransport as jest.Mock).mock.calls.at(
-          -1,
-        )[0];
-        expect(opts).toMatchObject({ port: Number(port), secure });
-      },
-    );
   });
 
   describe('sendOtp', () => {
@@ -121,9 +90,9 @@ describe('AuthService', () => {
         's1234567@u-aizu.ac.jp',
         expect.stringMatching(/^\d{6}$/),
       );
-      const transporter = (nodemailer.createTransport as jest.Mock).mock
-        .results[0].value;
-      expect(transporter.sendMail).toHaveBeenCalled();
+      expect(mockMail.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 's1234567@u-aizu.ac.jp' }),
+      );
       expect(result).toEqual({ status: 'OTP Sent successfully' });
     });
   });

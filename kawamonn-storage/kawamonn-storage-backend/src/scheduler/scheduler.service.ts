@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
-import * as nodemailer from 'nodemailer';
+import { MailService } from '../mail/mail.service';
 
 /**
  * SchedulerService — Replaces Flask Celery Beat tasks
@@ -14,22 +14,12 @@ import * as nodemailer from 'nodemailer';
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
-  private transporter: nodemailer.Transporter;
 
   constructor(
     private prisma: PrismaService,
     private usersService: UsersService,
-  ) {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '465', 10),
-      secure: true,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
+    private mail: MailService,
+  ) {}
 
   /**
    * Daily at 09:00 JST — Check and send expiry reminder emails
@@ -127,8 +117,8 @@ export class SchedulerService {
     let responseBody = '';
 
     try {
-      const info = await this.transporter.sendMail({
-        from: `"UoA Online" <${process.env.SMTP_USER}>`,
+      const info = await this.mail.send({
+        fromName: 'UoA Online',
         to: user.email,
         subject,
         text,
