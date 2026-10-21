@@ -70,7 +70,7 @@ export class TerminalGateway
       // WebSocket 端末に接続できてしまう。
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub as string },
-        select: { account_name: true, role: true, status: true },
+        select: { account_name: true, status: true },
       });
       if (!user || user.status === 'deleted') {
         this.logger.warn(
@@ -82,7 +82,6 @@ export class TerminalGateway
       }
 
       client.data.username = user.account_name;
-      client.data.role = user.role;
 
       this.logger.log(`[${client.id}] 接続: ユーザー=${client.data.username}`);
     } catch (err) {

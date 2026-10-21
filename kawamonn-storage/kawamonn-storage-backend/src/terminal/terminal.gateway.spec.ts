@@ -67,7 +67,7 @@ describe('TerminalGateway.handleConnection', () => {
     expect(client.data.username).toBeUndefined();
   });
 
-  it('有効なユーザーなら、トークンではなく DB の値で username/role を設定する', async () => {
+  it('有効なユーザーなら、トークンではなく DB の値で username を設定する', async () => {
     mockJwt.verify.mockReturnValue({
       sub: 'u1',
       account_name: 'stale-name',
@@ -85,6 +85,7 @@ describe('TerminalGateway.handleConnection', () => {
     );
     expect(client.disconnect).not.toHaveBeenCalled();
     expect(client.data.username).toBe('alice');
-    expect(client.data.role).toBe('user');
+    // 役割は端末では使わない(管理者かどうかは HTTP 側の JwtStrategy だけが決める)
+    expect(client.data.role).toBeUndefined();
   });
 });

@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: { sub: string; role?: string }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
@@ -29,7 +29,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: user.id,
       account_name: user.account_name,
       email: user.email,
-      role: user.role,
+      role: effectiveRole(payload.role, user.role),
     };
   }
+}
+
+/**
+ * このトークンで使える役割。管理者として扱うのは、確認コード(OTP)を通して発行したトークン
+ * (/auth/admin/verify。トークンに role: 'admin' と書く)で、DB でも今も管理者のときだけ。
+ * 通常のログイン(/auth/login、パスワードだけ)のトークンは、管理者のアカウントでも一般の利用者として扱う。
+ * (以前は DB の役割をそのまま返していたため、管理者はパスワードだけで管理者の API を使えた)
+ */
+export function effectiveRole(
+  tokenRole: string | undefined,
+  dbRole: string,
+): 'admin' | 'user' {
+  return tokenRole === 'admin' && dbRole === 'admin' ? 'admin' : 'user';
 }

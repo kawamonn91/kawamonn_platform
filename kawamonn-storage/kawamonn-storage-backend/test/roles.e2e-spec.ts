@@ -88,6 +88,19 @@ describe('Admin RolesGuard (e2e)', () => {
       .expect(200);
   });
 
+  it('管理者でも、通常のログインのトークン(role: user、確認コードなし)では 403 にする', async () => {
+    const token = jwtService.sign({
+      sub: adminUserId,
+      account_name: 'irrelevant',
+      role: 'user',
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/users')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+  });
+
   it('rejects an unauthenticated request before the RolesGuard is even reached', async () => {
     await request(app.getHttpServer()).get('/api/v1/admin/users').expect(401);
   });
