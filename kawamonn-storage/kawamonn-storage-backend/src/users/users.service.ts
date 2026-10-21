@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { User, Prisma } from '@prisma/client';
-import * as Docker from 'dockerode';
 import { execFileSync } from 'child_process';
+import { SshService } from '../ssh/ssh.service';
 
 /**
  * 利用者フォルダを保管して消すスクリプト。root で実行するので sudo の許可が要る(本番の pi は全権を持つ)。
@@ -14,29 +14,23 @@ export const DELETE_USER_SCRIPT =
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
-  private docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sshService: SshService,
+  ) {}
 
   /**
-   * 利用者の端末のコンテナを止めて消し、利用者フォルダを保管してから消す(DELETE_USER_SCRIPT)。
-   * SshContainer の行は User の削除に連動して消えるので、User を消す前に呼ぶこと。
+   * 利用者の端末のコンテナを消し、利用者フォルダを保管してから消す(DELETE_USER_SCRIPT)。
+   * コンテナの記録(SshContainer)をたどって消すので、User を消す前に呼ぶこと。
    */
   async deprovisionUser(account_name: string): Promise<void> {
-    const containers = await this.prisma.sshContainer.findMany({
-      where: { username: account_name },
-    });
-    for (const c of containers) {
-      if (!c.container_id) continue;
-      try {
-        const container = this.docker.getContainer(c.container_id);
-        await container.stop().catch(() => {});
-        await container.remove({ force: true }).catch(() => {});
-      } catch (e) {
-        this.logger.warn(
-          `Failed to remove container ${c.container_id} for ${account_name}: ${e.message}`,
-        );
-      }
+    try {
+      await this.sshService.removeUserContainers(account_name);
+    } catch (e) {
+      this.logger.warn(
+        `Failed to remove containers for ${account_name}: ${(e as Error).message}`,
+      );
     }
 
     try {

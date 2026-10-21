@@ -1,30 +1,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
-import * as Docker from 'dockerode';
+import { SshService } from '../ssh/ssh.service';
 import * as child_process from 'child_process';
-
-jest.mock('dockerode', () =>
-  jest.fn().mockImplementation(() => ({
-    getContainer: jest.fn().mockReturnValue({
-      stop: jest.fn().mockResolvedValue(undefined),
-      remove: jest.fn().mockResolvedValue(undefined),
-    }),
-  })),
-);
 
 jest.mock('child_process', () => ({
   execFileSync: jest.fn(),
 }));
 
 const mockPrisma = {
-  user: { findUnique: jest.fn(), findByAccountName: jest.fn() },
+  user: { findUnique: jest.fn() },
   otpCode: { create: jest.fn(), findFirst: jest.fn(), delete: jest.fn() },
-  sshContainer: { findMany: jest.fn(), deleteMany: jest.fn() },
 };
+const mockSsh = { removeUserContainers: jest.fn() };
 
 describe('UsersService', () => {
   let service: UsersService;
+
+  beforeAll(() => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -32,6 +29,7 @@ describe('UsersService', () => {
       providers: [
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: SshService, useValue: mockSsh },
       ],
     }).compile();
 
@@ -43,40 +41,25 @@ describe('UsersService', () => {
   });
 
   describe('deprovisionUser', () => {
-    it('stops and removes every container found, then runs delete_user.sh with the account name', async () => {
-      mockPrisma.sshContainer.findMany.mockResolvedValue([
-        { container_id: 'container-1' },
-        { container_id: 'container-2' },
-      ]);
-
+    it('端末のコンテナを消してから、delete_user.sh で利用者フォルダを保管して消す', async () => {
       await service.deprovisionUser('alice');
 
-      const dockerInstance = (Docker as unknown as jest.Mock).mock.results[0]
-        .value;
-      expect(dockerInstance.getContainer).toHaveBeenCalledWith('container-1');
-      expect(dockerInstance.getContainer).toHaveBeenCalledWith('container-2');
-      expect(dockerInstance.getContainer).toHaveBeenCalledTimes(2);
-
+      expect(mockSsh.removeUserContainers).toHaveBeenCalledWith('alice');
       expect(child_process.execFileSync).toHaveBeenCalledWith(
         'sudo',
         expect.arrayContaining(['alice', 'archive']),
       );
     });
 
-    it('skips containers with no container_id', async () => {
-      mockPrisma.sshContainer.findMany.mockResolvedValue([
-        { container_id: null },
-      ]);
+    it('コンテナを消せなくても、利用者フォルダの片付けは続ける', async () => {
+      mockSsh.removeUserContainers.mockRejectedValue(new Error('docker down'));
 
       await service.deprovisionUser('alice');
 
-      const dockerInstance = (Docker as unknown as jest.Mock).mock.results[0]
-        .value;
-      expect(dockerInstance.getContainer).not.toHaveBeenCalled();
+      expect(child_process.execFileSync).toHaveBeenCalled();
     });
 
-    it('does not throw when the delete_user.sh script fails', async () => {
-      mockPrisma.sshContainer.findMany.mockResolvedValue([]);
+    it('delete_user.sh が失敗しても例外にしない', async () => {
       (child_process.execFileSync as jest.Mock).mockImplementation(() => {
         throw new Error('script failed');
       });

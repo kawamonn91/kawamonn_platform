@@ -1,10 +1,12 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as Docker from 'dockerode';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { isValidAccountName } from '../common/account-name';
 import { userHomePath } from '../common/user-home';
@@ -19,74 +21,124 @@ export const SANDBOX_BRIDGE = 'kw-sandbox';
 const SANDBOX_SUBNET = '172.30.0.0/24';
 const SANDBOX_DNS = ['1.1.1.1', '1.0.0.1'];
 
+const IMAGE = 'kawamonn-ssh-base:latest';
+const CPU_LIMIT = 0.5; // CPU 1個の半分
+const MEMORY_LIMIT_MB = 512;
+// 日本語のファイル名や出力を扱えるようにする(イメージには locale の設定が無い。C.UTF-8 は追加の部品なしで使える)
+const LANG_ENV = 'LANG=C.UTF-8';
+
+/** Docker の API の失敗のうち、相手(コンテナ・ネットワーク)が無かったもの */
+function isNotFound(e: unknown): boolean {
+  return (e as { statusCode?: number })?.statusCode === 404;
+}
+
 @Injectable()
 export class SshService {
-  private docker: Docker;
+  private readonly logger = new Logger(SshService.name);
+  private readonly docker = new Docker({ socketPath: '/var/run/docker.sock' });
+  /** 利用者ごとの、用意している途中のコンテナ(同じ人が2つの画面で同時に端末を開いても、1つだけ作る) */
+  private readonly preparing = new Map<string, Promise<string>>();
 
-  constructor(private prisma: PrismaService) {
-    this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
-  }
+  constructor(private prisma: PrismaService) {}
 
-  async provisionContainer(username: string, publicKey: string = '') {
+  /**
+   * 利用者の端末のコンテナを新しく作って起動し、名前を返す。以前のコンテナと記録は消す。
+   * 端末は docker exec で使うので、コンテナの中で常駐させるものは要らない。イメージの既定のコマンド(sshd)は
+   * 使わずに待機だけさせる(2026-10 に SSH 接続の入口を廃止した)。Init で PID 1 を tini にし、止めるときにすぐ終わるようにする
+   */
+  async provisionContainer(username: string): Promise<string> {
     // 利用者名はそのままマウントするフォルダのパスになるので、"." や ".." などは通さない
     if (!isValidAccountName(username)) {
       throw new InternalServerErrorException('Invalid account name');
     }
-    const containerName = `kawamonn-ssh-${username}-${Math.random().toString(36).slice(-6)}`;
-    const memoryLimit = 512 * 1024 * 1024; // 512MB
-
     const user = await this.prisma.user.findUnique({
       where: { account_name: username },
       select: { role: true },
     });
-    const hostMountPath = userHomePath(username, user?.role === 'admin');
-
+    if (!user) throw new NotFoundException('Account not found');
+    const hostMountPath = userHomePath(username, user.role === 'admin');
     if (!fs.existsSync(hostMountPath)) {
       fs.mkdirSync(hostMountPath, { recursive: true });
     }
 
+    await this.removeUserContainers(username);
+    const containerName = `kawamonn-ssh-${username}-${crypto.randomBytes(3).toString('hex')}`;
     try {
       await this.ensureSandboxNetwork();
       const container = await this.docker.createContainer({
-        Image: 'kawamonn-ssh-base:latest',
+        Image: IMAGE,
         name: containerName,
+        Cmd: ['sleep', 'infinity'],
         HostConfig: {
-          Memory: memoryLimit,
-          MemorySwap: memoryLimit,
-          CpuQuota: 50000, // 50% CPU
+          Init: true,
+          Memory: MEMORY_LIMIT_MB * 1024 * 1024,
+          MemorySwap: MEMORY_LIMIT_MB * 1024 * 1024,
+          CpuQuota: CPU_LIMIT * 100000,
           CpuPeriod: 100000,
           Binds: [`${hostMountPath}:/home/${username}:rw`],
           NetworkMode: SANDBOX_NETWORK,
           Dns: SANDBOX_DNS,
           // ブラウザの端末は docker exec で接続するので、コンテナのポートはどこにも公開しない
-          // (2026-10 に SSH 接続の入口を廃止した。以前は 22 番を 127.0.0.1 に公開していた)
           RestartPolicy: { Name: 'unless-stopped' },
         },
         Env: [
           `USERNAME=${username}`,
-          `PUBLIC_KEY=${publicKey}`,
           // コンテナの起動時に、この UID(backend)へホームの読み書きを許可する ACL を付ける(entrypoint.sh)
           `BACKEND_UID=${process.getuid?.() ?? 1000}`,
+          LANG_ENV,
         ],
       });
-
       await container.start();
 
-      return await this.prisma.sshContainer.create({
+      await this.prisma.sshContainer.create({
         data: {
           username,
           container_id: containerName,
-          image_tag: 'kawamonn-ssh-base:latest',
-          cpu_limit: '0.5',
-          memory_limit: '512m',
+          image_tag: IMAGE,
+          cpu_limit: String(CPU_LIMIT),
+          memory_limit: `${MEMORY_LIMIT_MB}m`,
           last_started_at: new Date(),
         },
       });
+      return containerName;
     } catch (error) {
-      console.error('Docker provisioning failed:', error);
+      this.logger.error(`Docker provisioning failed for ${username}`, error);
       throw new InternalServerErrorException(
-        'Failed to provision SSH container. Ensure Docker daemon is running and image is built.',
+        'Failed to start the terminal environment. Ensure Docker is running and the image is built.',
       );
+    }
+  }
+
+  /**
+   * 利用者の端末のコンテナをすべて消し、その記録(SshContainer の行)も消す。ホームのファイルは消さない。
+   * 消せなかったコンテナの記録は残す(次に消すときにもう一度試す)
+   */
+  async removeUserContainers(username: string): Promise<void> {
+    const rows = await this.prisma.sshContainer.findMany({
+      where: { username },
+    });
+    const removed: string[] = [];
+    for (const row of rows) {
+      if (row.container_id) {
+        try {
+          await this.docker
+            .getContainer(row.container_id)
+            .remove({ force: true });
+        } catch (e) {
+          if (!isNotFound(e)) {
+            this.logger.warn(
+              `Failed to remove container ${row.container_id} for ${username}: ${(e as Error).message}`,
+            );
+            continue;
+          }
+        }
+      }
+      removed.push(row.id);
+    }
+    if (removed.length) {
+      await this.prisma.sshContainer.deleteMany({
+        where: { id: { in: removed } },
+      });
     }
   }
 
@@ -102,26 +154,22 @@ export class SshService {
       );
     }
 
+    let status = 'stopped or removed';
     try {
-      const container = this.docker.getContainer(dbContainer.container_id);
-      const data = await container.inspect();
-
-      return {
-        container_status: data.State.Status,
-        resource_usage: {
-          cpu_limit: dbContainer.cpu_limit,
-          memory_limit: dbContainer.memory_limit,
-        },
-      };
+      const data = await this.docker
+        .getContainer(dbContainer.container_id ?? '')
+        .inspect();
+      status = data.State.Status;
     } catch {
-      return {
-        container_status: 'stopped or removed',
-        resource_usage: {
-          cpu_limit: dbContainer.cpu_limit,
-          memory_limit: dbContainer.memory_limit,
-        },
-      };
+      // コンテナが消えていれば、上の既定のまま
     }
+    return {
+      container_status: status,
+      resource_usage: {
+        cpu_limit: dbContainer.cpu_limit,
+        memory_limit: dbContainer.memory_limit,
+      },
+    };
   }
 
   /** 端末のコンテナ専用のネットワークが無ければ作る(同時に作ろうとして重なったときは、そのまま使う) */
@@ -130,7 +178,7 @@ export class SshService {
       await this.docker.getNetwork(SANDBOX_NETWORK).inspect();
       return;
     } catch (e) {
-      if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+      if (!isNotFound(e)) throw e;
     }
     try {
       await this.docker.createNetwork({
@@ -149,47 +197,51 @@ export class SshService {
   }
 
   /**
-   * コンテナが存在しなければプロビジョニング、停止中なら起動する。
-   * 起動済みのコンテナIDを返す。
+   * 利用者の端末のコンテナを起動した状態にして、名前を返す。無ければ作り、止まっていれば起動する。
+   * 同じ利用者について同時に呼ばれたときは、先に始めた用意の結果を一緒に使う
    */
-  async ensureContainerRunning(username: string): Promise<string> {
+  ensureContainerRunning(username: string): Promise<string> {
+    const pending = this.preparing.get(username);
+    if (pending) return pending;
+    const job = this.prepareContainer(username).finally(() =>
+      this.preparing.delete(username),
+    );
+    this.preparing.set(username, job);
+    return job;
+  }
+
+  private async prepareContainer(username: string): Promise<string> {
     const dbContainer = await this.prisma.sshContainer.findFirst({
       where: { username },
       orderBy: { created_at: 'desc' },
     });
-
-    if (!dbContainer || !dbContainer.container_id) {
-      // コンテナが未プロビジョニング → 新規作成
-      const newContainer = await this.provisionContainer(username);
-      return newContainer.container_id;
+    if (!dbContainer?.container_id) {
+      return this.provisionContainer(username);
     }
 
     const container = this.docker.getContainer(dbContainer.container_id);
+    let data: Docker.ContainerInspectInfo;
     try {
-      const data = await container.inspect();
-      // 専用のネットワークに入っていない(以前に作った)コンテナは、作り直す。ホームのファイルはそのまま残る
-      if (
-        !Object.keys(data.NetworkSettings?.Networks ?? {}).includes(
-          SANDBOX_NETWORK,
-        )
-      ) {
-        await container.remove({ force: true });
-        const newContainer = await this.provisionContainer(username);
-        return newContainer.container_id;
-      }
-      if (data.State.Status !== 'running') {
-        await container.start();
-        await this.prisma.sshContainer.update({
-          where: { id: dbContainer.id },
-          data: { last_started_at: new Date() },
-        });
-      }
+      data = await container.inspect();
     } catch {
-      // コンテナが存在しない (Dockerから削除されている) → 再プロビジョニング
-      const newContainer = await this.provisionContainer(username);
-      return newContainer.container_id;
+      // コンテナが Docker から消えている → 作り直す
+      return this.provisionContainer(username);
     }
-
+    // 専用のネットワークに入っていない(以前に作った)コンテナは、作り直す。ホームのファイルはそのまま残る
+    if (
+      !Object.keys(data.NetworkSettings?.Networks ?? {}).includes(
+        SANDBOX_NETWORK,
+      )
+    ) {
+      return this.provisionContainer(username);
+    }
+    if (data.State.Status !== 'running') {
+      await container.start();
+      await this.prisma.sshContainer.update({
+        where: { id: dbContainer.id },
+        data: { last_started_at: new Date() },
+      });
+    }
     return dbContainer.container_id;
   }
 
@@ -213,6 +265,7 @@ export class SshService {
       Tty: true,
       User: username,
       WorkingDir: `/home/${username}`,
+      Env: [LANG_ENV],
     });
 
     const stream = (await exec.start({
