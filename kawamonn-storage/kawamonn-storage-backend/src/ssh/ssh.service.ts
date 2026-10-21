@@ -215,25 +215,29 @@ export class SshService {
       where: { username },
       orderBy: { created_at: 'desc' },
     });
-    if (!dbContainer?.container_id) {
-      return this.provisionContainer(username);
+    const container = dbContainer?.container_id
+      ? this.docker.getContainer(dbContainer.container_id)
+      : null;
+    let data: Docker.ContainerInspectInfo | null = null;
+    try {
+      data = container ? await container.inspect() : null;
+    } catch {
+      // コンテナが Docker から消えている → 下で作り直す
     }
 
-    const container = this.docker.getContainer(dbContainer.container_id);
-    let data: Docker.ContainerInspectInfo;
-    try {
-      data = await container.inspect();
-    } catch {
-      // コンテナが Docker から消えている → 作り直す
-      return this.provisionContainer(username);
-    }
-    // 専用のネットワークに入っていない(以前に作った)コンテナは、作り直す。ホームのファイルはそのまま残る
+    // 無い・Docker から消えている・専用のネットワークに入っていない(以前に作った)なら、作り直す。
+    // ホームのファイルはそのまま残る
     if (
+      !dbContainer?.container_id ||
+      !container ||
+      !data ||
       !Object.keys(data.NetworkSettings?.Networks ?? {}).includes(
         SANDBOX_NETWORK,
       )
     ) {
-      return this.provisionContainer(username);
+      const name = await this.provisionContainer(username);
+      await this.waitForUser(name, username);
+      return name;
     }
     if (data.State.Status !== 'running') {
       await container.start();
@@ -241,8 +245,43 @@ export class SshService {
         where: { id: dbContainer.id },
         data: { last_started_at: new Date() },
       });
+      await this.waitForUser(dbContainer.container_id, username);
     }
     return dbContainer.container_id;
+  }
+
+  /**
+   * コンテナの起動時の処理(entrypoint.sh がコンテナの中に利用者を作る)が終わるまで待つ。
+   * 作ったばかりのコンテナで待たずにシェルを開くと「unable to find user」で失敗し、1回目の端末がすぐに終わっていた
+   */
+  protected async waitForUser(
+    containerId: string,
+    username: string,
+    timeoutMs = 60000,
+  ): Promise<void> {
+    const container = this.docker.getContainer(containerId);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const exec = await container.exec({
+          Cmd: ['id', '-u', username],
+          AttachStdout: true,
+          AttachStderr: true,
+        });
+        const stream = await exec.start({ hijack: true, stdin: false });
+        await new Promise<void>((resolve) => {
+          stream.on('end', () => resolve());
+          stream.on('close', () => resolve());
+          stream.on('error', () => resolve());
+          stream.resume();
+        });
+        if ((await exec.inspect()).ExitCode === 0) return;
+      } catch {
+        // まだ起動の途中
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    throw new Error('The terminal environment did not become ready in time.');
   }
 
   /**

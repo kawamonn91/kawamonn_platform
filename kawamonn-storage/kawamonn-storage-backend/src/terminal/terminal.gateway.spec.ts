@@ -146,6 +146,44 @@ describe('TerminalGateway の端末セッション', () => {
     );
   });
 
+  it('接続の確認(DB の問い合わせ)が終わる前に届いた「開始」は、確認を待ってから扱う', async () => {
+    const prisma = {
+      user: {
+        findUnique: jest.fn(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(
+                () => resolve({ account_name: 'alice', status: 'active' }),
+                20,
+              ),
+            ),
+        ),
+      },
+    };
+    gateway = new TerminalGateway(
+      { verify: () => ({ sub: 'u1' }) } as any,
+      ssh as any,
+      prisma as any,
+    );
+    const client = {
+      ...connectedClient(),
+      data: {} as Record<string, unknown>,
+      handshake: { auth: { token: 'ok' }, query: {} },
+    };
+
+    const connecting = gateway.handleConnection(client as any);
+    await gateway.handleStart(client as any, {}); // 確認が終わる前に届いた
+    await connecting;
+
+    expect(ssh.createExecSession).toHaveBeenCalledWith(
+      'container-1',
+      'alice',
+      80,
+      24,
+    );
+    expect(client.emit).toHaveBeenCalledWith('ready');
+  });
+
   it('「開始」が続けて届いても、セッションは1つだけ作る', async () => {
     const client = connectedClient();
     await Promise.all([

@@ -53,6 +53,14 @@ export class TerminalGateway
   // 接続時: JWTを検証してusernameをソケットに付与
   // --------------------------------------------------
   async handleConnection(client: Socket) {
+    // 確かめ終わる前に届いた「開始」が待てるよう、確かめる処理をソケットに持たせる
+    // (画面は接続するとすぐに「開始」を送るので、DB の問い合わせより先に届くことがある)
+    const auth = this.authenticate(client);
+    client.data.auth = auth;
+    await auth;
+  }
+
+  private async authenticate(client: Socket): Promise<void> {
     try {
       const token =
         (client.handshake.auth?.token as string) ||
@@ -122,6 +130,7 @@ export class TerminalGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { cols?: number; rows?: number },
   ) {
+    await (client.data.auth as Promise<void> | undefined);
     const username = client.data.username as string;
     if (!username) {
       throw new WsException('Unauthorized');

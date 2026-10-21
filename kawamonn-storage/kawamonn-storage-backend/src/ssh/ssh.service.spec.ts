@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
+import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import { SANDBOX_NETWORK, SshService } from './ssh.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -176,6 +177,13 @@ describe('SshService', () => {
   });
 
   describe('ensureContainerRunning', () => {
+    let waitForUser: jest.SpyInstance;
+    beforeEach(() => {
+      waitForUser = jest
+        .spyOn(service as any, 'waitForUser')
+        .mockResolvedValue(undefined);
+    });
+
     it('専用のネットワークに入っていない以前のコンテナは、消して作り直す', async () => {
       const old = {
         inspect: jest.fn().mockResolvedValue({
@@ -194,11 +202,12 @@ describe('SshService', () => {
         { id: '1', container_id: 'old' },
       ]);
 
-      await expect(service.ensureContainerRunning('alice')).resolves.toMatch(
-        /^kawamonn-ssh-alice-/,
-      );
+      const name = await service.ensureContainerRunning('alice');
+      expect(name).toMatch(/^kawamonn-ssh-alice-/);
       expect(old.remove).toHaveBeenCalledWith({ force: true });
       expect(docker.createContainer).toHaveBeenCalledTimes(1);
+      // 作ったコンテナの中に利用者ができるまで待ってから返す
+      expect(waitForUser).toHaveBeenCalledWith(name, 'alice');
     });
 
     it('専用のネットワークに入っている停止中のコンテナは、そのまま起動する', async () => {
@@ -222,6 +231,24 @@ describe('SshService', () => {
       expect(existing.start).toHaveBeenCalled();
       expect(existing.remove).not.toHaveBeenCalled();
       expect(docker.createContainer).not.toHaveBeenCalled();
+      expect(waitForUser).toHaveBeenCalledWith('kept', 'alice');
+    });
+
+    it('動いているコンテナは、そのまま使う(待たない)', async () => {
+      docker.getContainer.mockReturnValue({
+        inspect: jest.fn().mockResolvedValue({
+          State: { Status: 'running' },
+          NetworkSettings: { Networks: { [SANDBOX_NETWORK]: {} } },
+        }),
+      });
+      mockPrisma.sshContainer.findFirst.mockResolvedValue({
+        id: '1',
+        container_id: 'live',
+      });
+      await expect(service.ensureContainerRunning('alice')).resolves.toBe(
+        'live',
+      );
+      expect(waitForUser).not.toHaveBeenCalled();
     });
 
     it('同じ利用者について同時に呼ばれても、コンテナは1つだけ作る', async () => {
@@ -237,6 +264,45 @@ describe('SshService', () => {
       // 終わったあとは、次の呼び出しで改めて確かめる
       await service.ensureContainerRunning('alice');
       expect(mockPrisma.sshContainer.findFirst).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('waitForUser', () => {
+    function execReturning(exitCode: number) {
+      return {
+        start: jest.fn().mockImplementation(async () => {
+          const stream = Object.assign(new EventEmitter(), {
+            resume: () => setImmediate(() => stream.emit('end')),
+          });
+          return stream;
+        }),
+        inspect: jest.fn().mockResolvedValue({ ExitCode: exitCode }),
+      };
+    }
+
+    it('コンテナの中に利用者ができるまで(id が成功するまで)待つ', async () => {
+      const exec = jest
+        .fn()
+        .mockResolvedValueOnce(execReturning(1))
+        .mockResolvedValueOnce(execReturning(1))
+        .mockResolvedValueOnce(execReturning(0));
+      docker.getContainer.mockReturnValue({ exec });
+
+      await (service as any).waitForUser('c1', 'alice', 5000);
+
+      expect(exec).toHaveBeenCalledTimes(3);
+      expect(exec).toHaveBeenCalledWith(
+        expect.objectContaining({ Cmd: ['id', '-u', 'alice'] }),
+      );
+    });
+
+    it('時間内にできなければ失敗にする', async () => {
+      docker.getContainer.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(execReturning(1)),
+      });
+      await expect(
+        (service as any).waitForUser('c1', 'alice', 500),
+      ).rejects.toThrow('did not become ready');
     });
   });
 });
