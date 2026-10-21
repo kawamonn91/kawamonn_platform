@@ -23,8 +23,8 @@ import { useAuth } from '../AuthContext';
 import { formatBytes, fetchWithRetry, isEditable } from './sshFileHelpers';
 import {
     type StorageEntry,
-    deleteEntry, isQuotaExceeded, isValidName, joinPath, listEntries, makeFolder, parentOf,
-    readFileBytes, readFileText, renameEntry, uploadFile, writeText,
+    deleteEntry, isValidName, joinPath, listEntries, makeFolder, parentOf,
+    readFileBytes, readFileText, renameEntry, saveErrorMessage, uploadFile, writeText,
 } from '../api/storage';
 import { createLatestTracker } from '../api/latest';
 
@@ -39,7 +39,6 @@ interface SshStatus {
 type FileEntry = StorageEntry;
 
 const NAME_RULE_MESSAGE = '名前に「/」「\\」は使えません。「.」「..」だけの名前も使えません。';
-const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
 
 // ─────────────────────────────────────────────
 // ファイルブラウザコンポーネント
@@ -147,7 +146,7 @@ function FileBrowser() {
             await uploadFile(currentPath, file);
             fetchDir(currentPath);
         } catch (err) {
-            setError(isQuotaExceeded(err) ? QUOTA_MESSAGE : getErrorMessage(err, 'アップロードに失敗しました'));
+            setError(saveErrorMessage(err, 'アップロードに失敗しました'));
         }
         e.target.value = '';
     };
@@ -210,7 +209,7 @@ function FileBrowser() {
             setEditorModal(false);
             fetchDir(currentPath);
         } catch (e) {
-            setError(isQuotaExceeded(e) ? QUOTA_MESSAGE : getErrorMessage(e, '保存に失敗しました'));
+            setError(saveErrorMessage(e, '保存に失敗しました'));
         } finally {
             setEditorSaving(false);
         }

@@ -24,7 +24,8 @@ import {
 } from '../common/safe-fs';
 import { StorageUsageService } from './storage-usage.service';
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+/** Web から読み書きできるファイルの大きさの上限(ダウンロードもアップロードも) */
+export const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 export interface FileEntry {
   name: string;

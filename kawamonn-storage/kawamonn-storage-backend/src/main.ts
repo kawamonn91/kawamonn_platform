@@ -1,33 +1,11 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
-import helmet from 'helmet';
-import { ALLOWED_ORIGINS } from './common/allowed-origins';
+import { setupApp } from './app-setup';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-
-  // Security headers
-  app.use(helmet());
-
-  app.setGlobalPrefix('api/v1');
-
-  // Restrict CORS to known origins
-  app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl)
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
-  });
-
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  setupApp(app);
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

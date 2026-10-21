@@ -1,4 +1,4 @@
-import api from './client';
+import api, { getErrorMessage } from './client';
 
 /**
  * 利用者フォルダ(HDD)のファイルを扱う API(/api/v1/filebrowser)の呼び出し。
@@ -59,9 +59,26 @@ export function toFileItem(e: StorageEntry): FileItem {
     };
 }
 
-/** 容量の上限を超えて断られたか(HTTP 413) */
+export const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
+export const TOO_LARGE_MESSAGE =
+    'ファイルが大きすぎるため、保存できませんでした(アップロードは 100MB、エディタでの保存は 10MB まで)。';
+
+function rejection(err: unknown): { status?: number; message?: string } {
+    const res = (err as { response?: { status?: number; data?: { message?: string } } })?.response;
+    return { status: res?.status, message: res?.data?.message };
+}
+
+/** 容量の上限(quota)を超えて断られたか。413 は大きすぎる本文でも返るので、メッセージで見分ける */
 export function isQuotaExceeded(err: unknown): boolean {
-    return (err as { response?: { status?: number } })?.response?.status === 413;
+    const { status, message } = rejection(err);
+    return status === 413 && message === 'Storage quota exceeded';
+}
+
+/** 保存(アップロード・エディタ・新規作成)に失敗したときに画面に出す文 */
+export function saveErrorMessage(err: unknown, fallback: string): string {
+    if (isQuotaExceeded(err)) return QUOTA_MESSAGE;
+    if (rejection(err).status === 413) return TOO_LARGE_MESSAGE;
+    return getErrorMessage(err, fallback);
 }
 
 /** フォルダ(null は一番上)の中身を、API が返す形のまま */

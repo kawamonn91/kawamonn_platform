@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { setupApp } from '../src/app-setup';
 import { JwtService } from '@nestjs/jwt';
 import * as request from 'supertest';
 import { AdminModule } from '../src/admin/admin.module';
@@ -13,7 +14,7 @@ jest.mock('nodemailer', () => ({
 }));
 
 describe('Admin RolesGuard (e2e)', () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
   let prisma: PrismaService;
   let jwtService: JwtService;
   let regularUserId: string;
@@ -24,11 +25,8 @@ describe('Admin RolesGuard (e2e)', () => {
       imports: [PrismaModule, AdminModule],
     }).compile();
 
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    setupApp(app);
     await app.init();
 
     prisma = moduleRef.get(PrismaService);

@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
-import { FileBrowserService } from './filebrowser.service';
+import { FileBrowserService, MAX_FILE_SIZE } from './filebrowser.service';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 import { Response } from 'express';
 
@@ -63,7 +63,10 @@ export class FileBrowserController {
    * multipart/form-data: field name "file"
    */
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  // ファイルはいったんメモリに載せるので、読み込みと同じ 100MB を上限にする(超えると 413 File too large)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }),
+  )
   async uploadFile(
     @CurrentUser() me: AuthUser,
     @Query('path') dirPath: string = '/',

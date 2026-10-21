@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { setupApp } from '../src/app-setup';
 import { JwtService } from '@nestjs/jwt';
 import * as request from 'supertest';
 import { AuthModule } from '../src/auth/auth.module';
@@ -16,7 +17,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
  * 利用者フォルダの置き場所(SSH_BASE)は test/setup-e2e.ts が一時フォルダにしている。
  */
 describe('Storage (e2e)', () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
   let prisma: PrismaService;
   let token: string;
   let userId: string;
@@ -33,11 +34,8 @@ describe('Storage (e2e)', () => {
       imports: [PrismaModule, AuthModule, FileBrowserModule],
     }).compile();
 
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    setupApp(app);
     await app.init();
 
     prisma = moduleRef.get(PrismaService);
@@ -138,9 +136,11 @@ describe('Storage (e2e)', () => {
       data: { quota_bytes: BigInt(20) },
     });
     try {
-      await auth(api().post('/api/v1/filebrowser/upload?path=/'))
+      const res = await auth(api().post('/api/v1/filebrowser/upload?path=/'))
         .attach('file', Buffer.alloc(64, 'x'), 'big.bin')
         .expect(413);
+      // 画面はこのメッセージで「容量の上限」と「大きすぎる」を見分ける
+      expect(res.body.message).toBe('Storage quota exceeded');
       expect(fs.existsSync(path.join(home, 'big.bin'))).toBe(false);
     } finally {
       await prisma.user.update({
@@ -148,6 +148,25 @@ describe('Storage (e2e)', () => {
         data: { quota_bytes: BigInt(1024 * 1024) },
       });
     }
+  });
+
+  it('エディタからは 100KB を超えるテキストも保存でき、10MB を超える本文は大きすぎるとして断る', async () => {
+    // express の既定の上限(100KB)のままだと、少し長いファイルも保存できなかった
+    const text = 'あいうえお\n'.repeat(20000); // 約 320KB
+    await auth(api().put('/api/v1/filebrowser/write-text'))
+      .send({ path: '/long.txt', content: text })
+      .expect(200);
+    expect(fs.readFileSync(path.join(home, 'long.txt'), 'utf8')).toBe(text);
+
+    const res = await auth(api().put('/api/v1/filebrowser/write-text'))
+      .send({ path: '/huge.txt', content: 'x'.repeat(11 * 1024 * 1024) })
+      .expect(413);
+    expect(res.body.message).not.toBe('Storage quota exceeded');
+    expect(fs.existsSync(path.join(home, 'huge.txt'))).toBe(false);
+
+    await auth(
+      api().delete('/api/v1/filebrowser/delete?path=/long.txt'),
+    ).expect(200);
   });
 
   it('利用者フォルダの外には出られない', async () => {

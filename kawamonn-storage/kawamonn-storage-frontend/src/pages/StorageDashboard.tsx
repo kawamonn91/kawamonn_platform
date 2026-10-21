@@ -12,8 +12,8 @@ import { useNavigate } from 'react-router-dom';
 import { useDisclosure } from '@mantine/hooks';
 import {
     type FileItem,
-    deleteEntry, isQuotaExceeded, isValidName, joinPath, listFolder, makeFolder,
-    readFileBytes, readFileText, uploadFile, writeText,
+    deleteEntry, isValidName, joinPath, listFolder, makeFolder,
+    readFileBytes, readFileText, saveErrorMessage, uploadFile, writeText,
 } from '../api/storage';
 import { createLatestTracker } from '../api/latest';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -26,8 +26,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 // FileItem の id はファイルやフォルダのパス("/docs/a.txt")。ファイルは HDD の利用者フォルダにあり、
 // SSH 画面の端末・ファイルブラウザと同じものを見ている
-
-const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
 
 // -----------------------------------------------
 // Icon helper
@@ -336,7 +334,7 @@ export default function StorageDashboard() {
             });
         } catch (err) {
             console.error('File creation failed', err);
-            alert(isQuotaExceeded(err) ? QUOTA_MESSAGE : 'ファイルの作成に失敗しました');
+            alert(saveErrorMessage(err, 'ファイルの作成に失敗しました'));
         }
     };
 
@@ -366,7 +364,7 @@ export default function StorageDashboard() {
             fetchFiles();
         } catch (err) {
             console.error('Failed to save file', err);
-            alert(isQuotaExceeded(err) ? QUOTA_MESSAGE : '保存に失敗しました');
+            alert(saveErrorMessage(err, '保存に失敗しました'));
         } finally {
             setEditorSaving(false);
         }
@@ -419,12 +417,12 @@ export default function StorageDashboard() {
         let done = 0;
         const errors: string[] = [];
 
-        let quotaExceeded = false;
+        const reasons = new Set<string>();
         for (const file of uploads) {
             try {
                 await uploadFile(currentFolderId, file);
             } catch (err) {
-                if (isQuotaExceeded(err)) quotaExceeded = true;
+                reasons.add(saveErrorMessage(err, 'アップロードに失敗しました'));
                 errors.push(file.name);
             }
             done++;
@@ -433,7 +431,7 @@ export default function StorageDashboard() {
 
         setUploadProgress(null);
         if (errors.length) {
-            alert(`${quotaExceeded ? QUOTA_MESSAGE + '\n' : ''}以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
+            alert(`${[...reasons].join('\n')}\n以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
         }
         fetchFiles();
     };
@@ -453,7 +451,7 @@ export default function StorageDashboard() {
         setUploadProgress(0);
         let done = 0;
         const errors: string[] = [];
-        let quotaExceeded = false;
+        const reasons = new Set<string>();
 
         for (const file of picked) {
             // 例: "MyFolder/subdir/file.txt" → "MyFolder/subdir" に置く
@@ -463,7 +461,7 @@ export default function StorageDashboard() {
             try {
                 await uploadFile(dir, file);
             } catch (err) {
-                if (isQuotaExceeded(err)) quotaExceeded = true;
+                reasons.add(saveErrorMessage(err, 'アップロードに失敗しました'));
                 errors.push(file.webkitRelativePath);
             }
             done++;
@@ -472,7 +470,7 @@ export default function StorageDashboard() {
 
         setUploadProgress(null);
         if (errors.length) {
-            alert(`${quotaExceeded ? QUOTA_MESSAGE + '\n' : ''}以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
+            alert(`${[...reasons].join('\n')}\n以下のファイルのアップロードに失敗しました:\n${errors.join('\n')}`);
         }
         fetchFiles();
     };

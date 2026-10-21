@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { isQuotaExceeded, isValidName, joinPath, parentOf, toFileItem } from './storage';
+import {
+    QUOTA_MESSAGE, TOO_LARGE_MESSAGE, isQuotaExceeded, isValidName, joinPath, parentOf, saveErrorMessage, toFileItem,
+} from './storage';
 
 describe('storage のパスの扱い', () => {
     it('joinPath: 一番上(null と "/")とフォルダの中', () => {
@@ -47,9 +49,20 @@ describe('storage のパスの扱い', () => {
         ).toBe('directory');
     });
 
-    it('isQuotaExceeded: 413 だけを容量超えとみなす', () => {
-        expect(isQuotaExceeded({ response: { status: 413 } })).toBe(true);
+    it('isQuotaExceeded: 容量の上限で断られた 413 だけを容量超えとみなす', () => {
+        const quota = { response: { status: 413, data: { message: 'Storage quota exceeded' } } };
+        expect(isQuotaExceeded(quota)).toBe(true);
+        // 本文が大きすぎる 413(エディタの保存・アップロードの上限)は容量超えではない
+        expect(isQuotaExceeded({ response: { status: 413, data: { message: 'request entity too large' } } })).toBe(false);
         expect(isQuotaExceeded({ response: { status: 500 } })).toBe(false);
         expect(isQuotaExceeded(new Error('x'))).toBe(false);
+    });
+
+    it('saveErrorMessage: 容量超え・大きすぎる・そのほかを言い分ける', () => {
+        expect(saveErrorMessage({ response: { status: 413, data: { message: 'Storage quota exceeded' } } }, 'x'))
+            .toBe(QUOTA_MESSAGE);
+        expect(saveErrorMessage({ response: { status: 413, data: { message: 'File too large' } } }, 'x'))
+            .toBe(TOO_LARGE_MESSAGE);
+        expect(saveErrorMessage(new Error('boom'), '保存に失敗しました')).toBe('保存に失敗しました');
     });
 });

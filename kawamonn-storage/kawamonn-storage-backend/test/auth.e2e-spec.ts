@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { setupApp } from '../src/app-setup';
 import * as request from 'supertest';
 import { AuthModule } from '../src/auth/auth.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -35,7 +36,7 @@ jest.mock('nodemailer', () => ({
  * Scoping the module keeps this suite fast and self-contained.
  */
 describe('Auth (e2e)', () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
   let prisma: PrismaService;
 
   beforeAll(async () => {
@@ -43,11 +44,8 @@ describe('Auth (e2e)', () => {
       imports: [PrismaModule, AuthModule],
     }).compile();
 
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app = moduleRef.createNestApplication<NestExpressApplication>();
+    setupApp(app);
     await app.init();
 
     prisma = moduleRef.get(PrismaService);
