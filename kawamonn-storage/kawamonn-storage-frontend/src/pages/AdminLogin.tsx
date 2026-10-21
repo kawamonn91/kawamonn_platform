@@ -34,13 +34,8 @@ export default function AdminLogin() {
                 account_name: accountName,
                 otp_code: otpCode
             });
-            const token = res.data.token;
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const payload = JSON.parse(window.atob(base64));
-
             // Update auth context state, then navigate (no full reload needed)
-            login(token, payload.role, payload.account_name);
+            login(res.data.token);
             navigate('/admin');
 
         } catch (err) {

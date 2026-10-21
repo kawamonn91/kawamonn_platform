@@ -10,7 +10,7 @@ import { useAuth } from '../AuthContext';
 
 export default function UserSettings() {
     const navigate = useNavigate();
-    const { logout } = useAuth();
+    const { logout, userRole } = useAuth();
     const [accountName, setAccountName] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -93,8 +93,7 @@ export default function UserSettings() {
 
             <AppShell.Main>
                 <Container size="sm">
-                    {/* Account Name (read-only: it's also the Linux/SSH login name and storage
-                        directory name, so renaming it here would silently break file/SSH access) */}
+                    {/* アカウント名は変えられない(利用者フォルダの名前と、端末のコンテナのマウント先に使っている) */}
                     <Card withBorder shadow="sm" radius="md" p="lg" mb="lg">
                         <Title order={4} mb="md">アカウント情報</Title>
                         <TextInput label="アカウント名" value={accountName} disabled />
@@ -155,7 +154,7 @@ export default function UserSettings() {
                     </Card>
 
                     <Text c="dimmed" size="xs" ta="center" mt="lg">
-                        {localStorage.getItem('account_name') || ''} · {localStorage.getItem('role') || 'user'}
+                        {accountName} · {userRole || 'user'}
                     </Text>
                 </Container>
             </AppShell.Main>

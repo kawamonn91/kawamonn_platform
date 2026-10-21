@@ -6,14 +6,18 @@ import { createContext, useContext } from 'react';
 // -----------------------------------------------
 export interface AuthContextValue {
     isAuthenticated: boolean;
+    /** このトークンで使える役割(管理者は、確認コードを通してログインしたときだけ 'admin') */
     userRole: string | null;
-    login: (token: string, role: string, accountName: string) => void;
+    accountName: string | null;
+    /** ログインの API が返したトークンで、ログインした状態にする */
+    login: (token: string) => void;
     logout: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue>({
     isAuthenticated: false,
     userRole: null,
+    accountName: null,
     login: () => {},
     logout: () => {},
 });

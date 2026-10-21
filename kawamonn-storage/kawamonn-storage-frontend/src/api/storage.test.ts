@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-    QUOTA_MESSAGE, TOO_LARGE_MESSAGE, isQuotaExceeded, isValidName, joinPath, parentOf, saveErrorMessage, toFileItem,
+    QUOTA_MESSAGE, TOO_LARGE_MESSAGE, isQuotaExceeded, isValidName, joinPath, parentOf, saveErrorMessage,
 } from './storage';
 
 describe('storage のパスの扱い', () => {
@@ -23,30 +23,6 @@ describe('storage のパスの扱い', () => {
         for (const bad of ['', '.', '..', 'a/b', 'a\\b', 'x'.repeat(256)]) {
             expect(isValidName(bad)).toBe(false);
         }
-    });
-
-    it('toFileItem: API の1件を画面の形にする(id はパス)', () => {
-        expect(
-            toFileItem({
-                name: 'a.pdf',
-                path: '/docs/a.pdf',
-                isDir: false,
-                size: 10,
-                mtime: '2026-10-21T00:00:00.000Z',
-                mime: 'application/pdf',
-            }),
-        ).toEqual({
-            id: '/docs/a.pdf',
-            name: 'a.pdf',
-            size: '10',
-            mime_type: 'application/pdf',
-            created_at: '2026-10-21T00:00:00.000Z',
-            parent_id: '/docs',
-        });
-        expect(
-            toFileItem({ name: 'd', path: '/d', isDir: true, size: 4096, mtime: '', mime: 'directory' })
-                .mime_type,
-        ).toBe('directory');
     });
 
     it('isQuotaExceeded: 容量の上限で断られた 413 だけを容量超えとみなす', () => {

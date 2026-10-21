@@ -10,10 +10,7 @@ import AdminLogin from './pages/AdminLogin';
 import SshDashboard from './pages/SshDashboard';
 import UserSettings from './pages/UserSettings';
 import { AuthContext, useAuth } from './AuthContext';
-import '@mantine/core/styles.css';
-
-// The Capacitor native-platform base URL is set once in src/api/client.ts,
-// which every page now uses instead of the raw axios module.
+import { decodeToken } from './api/token';
 
 // -----------------------------------------------
 // Protected Route wrappers
@@ -36,33 +33,39 @@ function AdminRoute({ children }: { children: React.ReactElement }) {
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
   const [userRole, setUserRole] = useState<string | null>(() => localStorage.getItem('role'));
+  const [accountName, setAccountName] = useState<string | null>(() => localStorage.getItem('account_name'));
 
   // Sync auth state when localStorage changes from other tabs
   useEffect(() => {
     const handleStorage = () => {
       setIsAuthenticated(!!localStorage.getItem('token'));
       setUserRole(localStorage.getItem('role'));
+      setAccountName(localStorage.getItem('account_name'));
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const login = (token: string, role: string, accountName: string) => {
+  const login = (token: string) => {
+    const payload = decodeToken(token);
+    if (!payload) throw new Error('ログインの応答を読めませんでした');
     localStorage.setItem('token', token);
-    localStorage.setItem('role', role);
-    localStorage.setItem('account_name', accountName);
+    localStorage.setItem('role', payload.role);
+    localStorage.setItem('account_name', payload.account_name);
     setIsAuthenticated(true);
-    setUserRole(role);
+    setUserRole(payload.role);
+    setAccountName(payload.account_name);
   };
 
   const logout = () => {
     localStorage.clear();
     setIsAuthenticated(false);
     setUserRole(null);
+    setAccountName(null);
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, userRole, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, userRole, accountName, login, logout }}>
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />

@@ -9,7 +9,7 @@ import {
     IconAlertCircle, IconArrowLeft, IconCpu, IconDeviceFloppy,
     IconPlugConnected, IconPlugConnectedX, IconFolder, IconFile,
     IconUpload, IconFolderPlus, IconTrash, IconEdit, IconDownload,
-    IconChevronRight, IconHome, IconDots, IconFilePlus, IconCheck, IconFileText,
+    IconChevronRight, IconHome, IconDots, IconFilePlus, IconFileText,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -20,7 +20,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
-import { formatBytes, fetchWithRetry, isEditable } from './sshFileHelpers';
+import { formatBytes, fetchWithRetry, isEditableFile, saveBytesAs } from '../api/files';
+import TextEditorModal from '../components/TextEditorModal';
 import {
     type StorageEntry,
     deleteEntry, isValidName, joinPath, listEntries, makeFolder, parentOf,
@@ -67,7 +68,6 @@ function FileBrowser() {
     const [newFileName, setNewFileName] = useState('');
 
     const uploadRef = useRef<HTMLInputElement>(null);
-    const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
 
     // 素早くフォルダを移動したとき、遅れて届いた古い一覧(再試行の分を含む)で上書きしないよう、最後に頼んだ結果だけを使う
     const latestList = useRef(createLatestTracker());
@@ -110,13 +110,7 @@ function FileBrowser() {
 
     const handleDownload = async (entry: FileEntry) => {
         try {
-            const data = await readFileBytes(entry.path);
-            const url = window.URL.createObjectURL(new Blob([data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = entry.name;
-            link.click();
-            window.URL.revokeObjectURL(url);
+            saveBytesAs(entry.name, await readFileBytes(entry.path), entry.mime);
         } catch {
             setError('ダウンロードに失敗しました');
         }
@@ -215,38 +209,6 @@ function FileBrowser() {
         }
     };
 
-    // エディタのキーボードハンドラー（nano風）
-    const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        // Tab キー: フォーカス移動ではなくスペース挿入
-        if (e.key === 'Tab') {
-            e.preventDefault();
-            const ta = editorTextareaRef.current;
-            if (!ta) return;
-            const start = ta.selectionStart;
-            const end = ta.selectionEnd;
-            const spaces = '    '; // 4スペース
-            const newContent = editorContent.substring(0, start) + spaces + editorContent.substring(end);
-            setEditorContent(newContent);
-            // カーソル位置をスペース挿入後に移動
-            requestAnimationFrame(() => {
-                ta.selectionStart = ta.selectionEnd = start + spaces.length;
-            });
-            return;
-        }
-        // Ctrl+S: 保存
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-            e.preventDefault();
-            handleEditorSave();
-            return;
-        }
-        // Ctrl+X: 閉じる
-        if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
-            e.preventDefault();
-            setEditorModal(false);
-            return;
-        }
-    };
-
     const openNewFile = () => {
         setNewFileName('');
         setNewFileModal(true);
@@ -323,7 +285,6 @@ function FileBrowser() {
                     新規ファイル
                 </Button>
                 <Button
-                    id="fb-refresh-btn"
                     size="compact-xs"
                     variant="subtle"
                     color="gray"
@@ -332,7 +293,7 @@ function FileBrowser() {
                 >
                     アップロード
                 </Button>
-                <input id="fb-upload-input" ref={uploadRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
+                <input ref={uploadRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
                 <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => fetchDir(currentPath)} title="再読み込み" style={{ marginLeft: 'auto' }}>
                     <IconRefresh size={12} />
                 </ActionIcon>
@@ -387,7 +348,7 @@ function FileBrowser() {
                                 onClick={() => {
                                     if (entry.isDir) {
                                         fetchDir(entry.path);
-                                    } else if (isEditable(entry.name)) {
+                                    } else if (isEditableFile(entry.name, entry.mime)) {
                                         openEditor(entry);
                                     }
                                 }}
@@ -395,7 +356,7 @@ function FileBrowser() {
                                 <Group gap="xs" wrap="nowrap" style={{ overflow: 'hidden', flex: 1 }}>
                                     {entry.isDir
                                         ? <IconFolder size={14} color="#58a6ff" style={{ flexShrink: 0 }} />
-                                        : isEditable(entry.name)
+                                        : isEditableFile(entry.name, entry.mime)
                                             ? <IconFileText size={14} color="#3fb950" style={{ flexShrink: 0 }} />
                                             : <IconFile size={14} color="#8b949e" style={{ flexShrink: 0 }} />
                                     }
@@ -421,7 +382,7 @@ function FileBrowser() {
                                             </ActionIcon>
                                         </Menu.Target>
                                         <Menu.Dropdown style={{ background: '#161b22', border: '1px solid #30363d' }}>
-                                            {!entry.isDir && isEditable(entry.name) && (
+                                            {!entry.isDir && isEditableFile(entry.name, entry.mime) && (
                                                 <Menu.Item
                                                     leftSection={<IconEdit size={13} />}
                                                     onClick={e => { e.stopPropagation(); openEditor(entry); }}
@@ -533,125 +494,17 @@ function FileBrowser() {
                 </Stack>
             </Modal>
 
-            {/* テキストエディタモーダル (nano風) */}
-            <Modal
+            <TextEditorModal
                 opened={editorModal}
+                path={editorPath}
+                content={editorContent}
+                onChange={setEditorContent}
+                onSave={handleEditorSave}
                 onClose={() => setEditorModal(false)}
-                title={
-                    <Group gap="xs">
-                        <IconFileText size={14} color="#58a6ff" />
-                        <Text size="sm" c="white" style={{ fontFamily: 'monospace' }}>
-                            GNU nano — {editorPath.split('/').pop()}
-                        </Text>
-                        {editorIsNew && <Badge size="xs" color="teal">新規</Badge>}
-                    </Group>
-                }
-                size="xl"
-                closeButtonProps={{ tabIndex: -1 }}
-                styles={{
-                    content: { background: '#0d1117', border: '1px solid #30363d' },
-                    header: { background: '#161b22', borderBottom: '1px solid #30363d' },
-                }}
-            >
-                <Stack gap={0}>
-                    {editorLoading ? (
-                        <Stack align="center" py="xl">
-                            <Loader size="sm" color="blue" />
-                            <Text size="xs" c="dimmed">読み込んでいます...</Text>
-                        </Stack>
-                    ) : (
-                        <textarea
-                            ref={editorTextareaRef}
-                            value={editorContent}
-                            onChange={e => setEditorContent(e.target.value)}
-                            onKeyDown={handleEditorKeyDown}
-                            rows={22}
-                            style={{
-                                width: '100%',
-                                background: '#010409',
-                                border: '1px solid #30363d',
-                                borderRadius: 4,
-                                color: '#e6edf3',
-                                fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                                fontSize: 13,
-                                lineHeight: 1.6,
-                                resize: 'vertical',
-                                padding: '8px 10px',
-                                outline: 'none',
-                                boxSizing: 'border-box',
-                                tabSize: 4,
-                            }}
-                            placeholder="ファイルの内容を入力..."
-                            spellCheck={false}
-                            autoComplete="off"
-                            autoCorrect="off"
-                        />
-                    )}
-
-                    {/* nano風ショートカットバー */}
-                    <div style={{
-                        background: '#161b22',
-                        borderTop: '1px solid #30363d',
-                        padding: '6px 10px',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '4px 16px',
-                        marginTop: 6,
-                        borderRadius: '0 0 4px 4px',
-                    }}>
-                        {[
-                            { key: '^O', label: '保存 (Ctrl+S)' },
-                            { key: '^X', label: '閉じる (Ctrl+X)' },
-                            { key: 'Tab', label: 'インデント (4sp)' },
-                        ].map(({ key, label }) => (
-                            <Group key={key} gap={4} wrap="nowrap">
-                                <Text
-                                    size="xs"
-                                    style={{
-                                        background: '#30363d',
-                                        color: '#e6edf3',
-                                        fontFamily: 'monospace',
-                                        padding: '1px 5px',
-                                        borderRadius: 3,
-                                        fontWeight: 600,
-                                        fontSize: 11,
-                                        whiteSpace: 'nowrap',
-                                    }}
-                                >
-                                    {key}
-                                </Text>
-                                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{label}</Text>
-                            </Group>
-                        ))}
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                            <Button
-                                variant="subtle"
-                                color="gray"
-                                size="xs"
-                                onClick={() => setEditorModal(false)}
-                                tabIndex={-1}
-                            >
-                                キャンセル
-                            </Button>
-                            <Button
-                                color="blue"
-                                size="xs"
-                                leftSection={<IconCheck size={13} />}
-                                onClick={handleEditorSave}
-                                loading={editorSaving}
-                                disabled={editorLoading}
-                                tabIndex={-1}
-                            >
-                                保存
-                            </Button>
-                        </div>
-                    </div>
-
-                    <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace', marginTop: 4 }}>
-                        {editorPath}
-                    </Text>
-                </Stack>
-            </Modal>
+                loading={editorLoading}
+                saving={editorSaving}
+                isNew={editorIsNew}
+            />
         </Stack>
     );
 }
@@ -661,7 +514,7 @@ function FileBrowser() {
 // ─────────────────────────────────────────────
 export default function SshDashboard() {
     const navigate = useNavigate();
-    const { logout } = useAuth();
+    const { logout, accountName } = useAuth();
 
     // ターミナル状態
     const [sessionState, setSessionState] = useState<SessionState>('idle');
@@ -688,16 +541,15 @@ export default function SshDashboard() {
     // ----------------------------------------------
     const fetchStatus = useCallback(async () => {
         try {
-            const username = localStorage.getItem('account_name');
-            if (!username) return;
-            const res = await api.get(`/api/v1/ssh/status/${username}`);
+            if (!accountName) return;
+            const res = await api.get(`/api/v1/ssh/status/${encodeURIComponent(accountName)}`);
             setContainerStatus(res.data);
         } catch (err) {
             if (!axios.isAxiosError(err) || err.response?.status !== 404) {
                 console.error('Failed to fetch SSH status');
             }
         }
-    }, []);
+    }, [accountName]);
 
     useEffect(() => {
         (async () => { await fetchStatus(); })();
@@ -839,6 +691,17 @@ export default function SshDashboard() {
             connectedRef.current = true;
             fetchStatus();
 
+            // 準備の間に画面の大きさに合わせた端末の幅・高さを、シェルにも伝える
+            // (準備中の大きさの変更は届かないので、伝えないと行の折り返しがずれる)
+            try {
+                fitAddonRef.current?.fit();
+            } catch {
+                // fit() can throw if the terminal was detached from the DOM; safe to ignore.
+            }
+            if (xtermRef.current) {
+                socket.emit('resize', { cols: xtermRef.current.cols, rows: xtermRef.current.rows });
+            }
+
             // キー入力をコンテナに送信
             inputListenerRef.current?.dispose();
             inputListenerRef.current = xtermRef.current?.onData((data) => {
@@ -859,6 +722,13 @@ export default function SshDashboard() {
         socket.on('error', (err: { message: string }) => {
             setErrorMsg(err.message || 'Connection error');
             setSessionState('error');
+        });
+
+        // backend が処理を断ったとき(Nest は 'exception' で知らせる)。待ったままにせずエラーにする
+        socket.on('exception', (err: { message?: string }) => {
+            setErrorMsg(err?.message || 'Terminal error');
+            setSessionState('error');
+            socket.disconnect();
         });
 
         socket.on('connect_error', (err) => {
@@ -1085,7 +955,7 @@ export default function SshDashboard() {
                                         flexDirection: 'column',
                                     }}
                                 >
-                                    {/* カードヘッダー: タイトル + アクションボタン */}
+                                    {/* カードヘッダー */}
                                     <Group
                                         px="sm"
                                         py={6}
@@ -1095,22 +965,6 @@ export default function SshDashboard() {
                                         <Group gap="xs">
                                             <IconFolder size={13} color="#58a6ff" />
                                             <Text size="xs" c="gray.3" fw={600}>Files</Text>
-                                        </Group>
-                                        <Group gap={4}>
-                                            <Tooltip label="再読み込み">
-                                                <ActionIcon size="xs" variant="subtle" color="gray"
-                                                    onClick={() => (document.getElementById('fb-refresh-btn') as HTMLButtonElement)?.click()}
-                                                >
-                                                    <IconRefresh size={11} />
-                                                </ActionIcon>
-                                            </Tooltip>
-                                            <Tooltip label="ファイルをアップロード">
-                                                <ActionIcon size="xs" variant="subtle" color="green"
-                                                    onClick={() => document.getElementById('fb-upload-input')?.click()}
-                                                >
-                                                    <IconUpload size={11} />
-                                                </ActionIcon>
-                                            </Tooltip>
                                         </Group>
                                     </Group>
                                     <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -1182,7 +1036,7 @@ export default function SshDashboard() {
                                             <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#27c93f' }} />
                                         </Group>
                                         <Text size="xs" c="dimmed" ff="monospace">
-                                            {localStorage.getItem('account_name')}@kawamonn-sandbox
+                                            {accountName}@kawamonn-sandbox
                                         </Text>
                                     </Group>
                                     <Group gap="xs">

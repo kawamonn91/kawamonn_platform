@@ -16,16 +16,6 @@ export interface StorageEntry {
     mime: string;
 }
 
-/** ストレージ画面で使う形。id はパス、parent_id は親フォルダのパス(一番上は null) */
-export interface FileItem {
-    id: string;
-    name: string;
-    size: string;
-    mime_type: string;
-    created_at: string;
-    parent_id: string | null;
-}
-
 /** フォルダ(null は一番上)の中の name のパス */
 export function joinPath(dir: string | null, name: string): string {
     const base = !dir || dir === '/' ? '' : dir.replace(/\/+$/, '');
@@ -46,17 +36,6 @@ export function isValidName(name: string): boolean {
     if (!name || name === '.' || name === '..') return false;
     if (/[/\\\0]/.test(name)) return false;
     return new TextEncoder().encode(name).length <= 255;
-}
-
-export function toFileItem(e: StorageEntry): FileItem {
-    return {
-        id: e.path,
-        name: e.name,
-        size: String(e.size),
-        mime_type: e.isDir ? 'directory' : e.mime || 'application/octet-stream',
-        created_at: e.mtime,
-        parent_id: parentOf(e.path),
-    };
 }
 
 export const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
@@ -81,15 +60,10 @@ export function saveErrorMessage(err: unknown, fallback: string): string {
     return getErrorMessage(err, fallback);
 }
 
-/** フォルダ(null は一番上)の中身を、API が返す形のまま */
-export async function listEntries(dir: string | null): Promise<StorageEntry[]> {
-    const res = await api.get('/api/v1/filebrowser/ls', { params: { path: dir ?? '/' } });
+/** フォルダ("/" は一番上)の中身 */
+export async function listEntries(dir: string): Promise<StorageEntry[]> {
+    const res = await api.get('/api/v1/filebrowser/ls', { params: { path: dir } });
     return (res.data?.entries ?? []) as StorageEntry[];
-}
-
-/** フォルダ(null は一番上)の中身を、ストレージ画面の形で */
-export async function listFolder(dir: string | null): Promise<FileItem[]> {
-    return (await listEntries(dir)).map(toFileItem);
 }
 
 export async function readFileBytes(path: string): Promise<ArrayBuffer> {
@@ -119,12 +93,12 @@ export async function makeFolder(path: string): Promise<void> {
     await api.post('/api/v1/filebrowser/mkdir', { path });
 }
 
-/** dir(null は一番上)にファイルを置く。同じ名前があれば上書きし、途中のフォルダは作る */
-export async function uploadFile(dir: string | null, file: File): Promise<void> {
+/** dir("/" は一番上)にファイルを置く。同じ名前があれば上書きし、途中のフォルダは作る */
+export async function uploadFile(dir: string, file: File): Promise<void> {
     const formData = new FormData();
     formData.append('file', file);
     await api.post('/api/v1/filebrowser/upload', formData, {
-        params: { path: dir ?? '/' },
+        params: { path: dir },
         headers: { 'Content-Type': 'multipart/form-data' },
     });
 }

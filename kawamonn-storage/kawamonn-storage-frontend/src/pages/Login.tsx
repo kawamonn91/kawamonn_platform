@@ -16,16 +16,8 @@ export default function Login() {
         try {
             const res = await api.post('/api/v1/auth/login', { account_name: accountName, password });
 
-            const token = res.data.token;
-            const base64Url = token.split('.')[1];
-            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
-            const decoded = JSON.parse(jsonPayload);
-
             // Update auth context state first, then navigate
-            login(token, decoded.role, decoded.account_name);
+            login(res.data.token);
             navigate('/');
         } catch (err) {
             setError(getErrorMessage(err, 'Login failed'));
