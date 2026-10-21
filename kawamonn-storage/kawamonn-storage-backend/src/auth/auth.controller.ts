@@ -14,6 +14,7 @@ import { EmailDto } from './dto/email.dto';
 import { AdminVerifyDto } from './dto/admin-verify.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Throttle } from '@nestjs/throttler';
+import { clientIpOf } from '../common/client-ip-throttler.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -58,17 +59,18 @@ export class AuthController {
   @Post('forgot-password')
   @Throttle({ default: { limit: 3, ttl: 60000 } })
   forgotPassword(@Body() body: EmailDto, @Req() req: Request) {
-    const ip =
-      req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
-    return this.authService.forgotPassword(body.email, ip);
+    // 接続元は回数制限と同じ数え方(本番は Cloudflare の CF-Connecting-IP)。req.ip は全員 Pi の中(::1)になる
+    return this.authService.forgotPassword(body.email, clientIpOf(req));
   }
 
   @HttpCode(HttpStatus.OK)
   @Post('reset-password')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   resetPassword(@Body() body: ResetPasswordDto, @Req() req: Request) {
-    const ip =
-      req.ip || (req.headers['x-forwarded-for'] as string) || 'unknown';
-    return this.authService.resetPassword(body.token, body.new_password, ip);
+    return this.authService.resetPassword(
+      body.token,
+      body.new_password,
+      clientIpOf(req),
+    );
   }
 }

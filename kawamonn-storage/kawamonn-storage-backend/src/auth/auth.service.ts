@@ -281,19 +281,18 @@ export class AuthService {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // --- Rate Limiting Check ---
+    // 同じメールアドレス、または同じ接続元からの申請は、1時間に10回まで
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const recentLogs = await this.prisma.auditLog.findMany({
+    const rateLimitCount = await this.prisma.auditLog.count({
       where: {
         action: 'forgot_password_req',
         created_at: { gte: oneHourAgo },
+        OR: [
+          { metadata: { path: ['email'], equals: normalizedEmail } },
+          { metadata: { path: ['ip'], equals: ip } },
+        ],
       },
     });
-
-    const rateLimitCount = recentLogs.filter((log) => {
-      const meta = log.metadata as any;
-      return meta?.email === normalizedEmail || meta?.ip === ip;
-    }).length;
 
     if (rateLimitCount >= 10) {
       throw new HttpException(

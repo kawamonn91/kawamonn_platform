@@ -127,6 +127,49 @@ describe('Auth (e2e)', () => {
     });
   });
 
+  describe('POST /auth/forgot-password', () => {
+    beforeEach(async () => {
+      await prisma.auditLog.deleteMany({
+        where: { action: 'forgot_password_req' },
+      });
+    });
+
+    const ask = (email: string, ip: string) =>
+      request(app.getHttpServer())
+        .post('/api/v1/auth/forgot-password')
+        .set('CF-Connecting-IP', ip)
+        .send({ email });
+
+    it('接続元は Cloudflare の CF-Connecting-IP で数え、ほかの人の申請で止まらない', async () => {
+      // 以前は全員の接続元が Pi の中(::1)に見え、サイト全体で1時間10回までになっていた
+      for (let i = 0; i < 10; i++) {
+        await ask(`nobody${i}@example.com`, `203.0.113.${i}`).expect(200);
+      }
+      await ask('someone-else@example.com', '198.51.100.7').expect(200);
+
+      const logged = await prisma.auditLog.findMany({
+        where: { action: 'forgot_password_req' },
+      });
+      expect(logged.map((l) => (l.metadata as { ip: string }).ip)).toContain(
+        '198.51.100.7',
+      );
+    });
+
+    it('同じ接続元からは、1時間に10回まで', async () => {
+      for (let i = 0; i < 10; i++) {
+        await ask(`nobody${i}@example.com`, '203.0.113.50').expect(200);
+      }
+      await ask('another@example.com', '203.0.113.50').expect(429);
+    });
+
+    it('同じメールアドレスへは、接続元を変えても1時間に10回まで', async () => {
+      for (let i = 0; i < 10; i++) {
+        await ask('target@example.com', `203.0.113.${100 + i}`).expect(200);
+      }
+      await ask('target@example.com', '198.51.100.99').expect(429);
+    });
+  });
+
   describe('POST /auth/login', () => {
     it('returns 401 for a nonexistent account', async () => {
       await request(app.getHttpServer())
