@@ -139,7 +139,6 @@ export class AuthService {
     const hashedPassword = await hashPassword(registerDto.password);
 
     // Calculate expiry_at for @u-aizu.ac.jp accounts (4 years)
-    // Migrated from: Flask register app (apps/register/app.py)
     let expiryAt: Date | undefined;
     if (registerDto.email.toLowerCase().endsWith('@u-aizu.ac.jp')) {
       expiryAt = new Date();

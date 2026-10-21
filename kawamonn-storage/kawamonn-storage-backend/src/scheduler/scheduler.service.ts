@@ -5,11 +5,10 @@ import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 
 /**
- * SchedulerService — Replaces Flask Celery Beat tasks
- *
- * Migrated from: kawamonn_platform/worker/tasks.py
- * - check_reminders() → checkReminders() : Daily 09:00 JST
- * - check_cleanup()   → checkCleanup()   : Daily 10:00 JST
+ * 毎日の定期処理
+ * - checkReminders(): 09:00 期限が近い利用者にお知らせのメール
+ * - checkCleanup():   10:00 期限が切れた利用者の片付け(端末のコンテナ・利用者フォルダは保管してから消す)
+ * - purgeExpiredCodes(): 04:30 期限の切れた確認コード・再設定用のトークンを消す
  */
 @Injectable()
 export class SchedulerService {
@@ -23,7 +22,6 @@ export class SchedulerService {
 
   /**
    * Daily at 09:00 JST — Check and send expiry reminder emails
-   * Migrated from: Celery task check_reminders() in tasks.py
    */
   @Cron('0 9 * * *', { timeZone: 'Asia/Tokyo' })
   async checkReminders() {
@@ -86,7 +84,6 @@ export class SchedulerService {
 
   /**
    * Send a reminder email to a user about their upcoming account expiry
-   * Migrated from: Celery task send_reminder_email() in tasks.py
    */
   private async sendReminderEmail(
     user: {
@@ -172,7 +169,6 @@ export class SchedulerService {
 
   /**
    * Daily at 10:00 JST — Cleanup expired user accounts
-   * Migrated from: Celery task check_cleanup() in tasks.py
    */
   @Cron('0 10 * * *', { timeZone: 'Asia/Tokyo' })
   async checkCleanup() {

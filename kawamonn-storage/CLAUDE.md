@@ -24,8 +24,8 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   dockerode、Passport/JWT、class-validator。MinIO・Redis/BullMQ は 2026-10 に廃止した(ファイルは HDD の利用者フォルダだけ)
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 23 suites/148 tests + e2e 4 suites/14 tests)、
-  Vitest(frontend: 4 files/25 tests)
+- **テスト**: Jest(backend: unit 26 suites/186 tests + e2e 4 suites/22 tests)、
+  Vitest(frontend: 5 files/31 tests)
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
   3ジョブが走る。lint は backend・frontend とも実gate(0件維持)で、backend は `npm run lint:check`(自動修正なし)で判定する。
@@ -91,12 +91,9 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   `'/api/(.*)'` のような無名正規表現グループは使えず、`'/api/{*splat}'` のように書く。
   (以前これを使っていた `ServeStaticModule` は、本番では使われていなかったので 2026-10-21 に削除した。
   画面は PM2 の `kawamonn-frontend`(vite preview)が配信し、backend には `/api` と `/socket.io` だけが届く)
-- **既存の `プロジェクト説明資料.md` と `運用ガイド.md`(git root直下)は古く、不正確。**
-  前者はTOTP二段階認証やファイル共有機能を「実装済み」と記載しているが、実際のコードには存在しない
-  (スキーマだけ先行、あるいは依存パッケージのみ導入でコード未実装)。後者はNestJS移行前の
-  Flask/Celeryベースの旧システム向けの手順(systemctl、Celery、Flower等)で、現在のPM2構成とは
-  一致しない。**この2つは参照しないこと。** 代わりにこのファイルと、正確な技術解説として作成した
-  Artifact(https://claude.ai/artifact/Sx4Bvy8ZU6qfyYBM3EAun3)を参照する
+- 構成の説明は、このファイルと技術解説の Artifact(https://claude.ai/artifact/Sx4Bvy8ZU6qfyYBM3EAun3)を参照する。
+  以前あった `プロジェクト説明資料.md`・`運用ガイド.md`(git root)と `docs/`(DB の図・SQL・API の説明)は、
+  Flask 時代や MinIO・`/files` API のころのままで不正確だったので削除した
 - **PM2 は `ecosystem.config.js` を書き換えただけでは反映されない。** 設定を変えたら
   `pm2 delete <name> && pm2 start ecosystem.config.js --only <name> && pm2 save` で起動し直す
   (2026-10 まで、frontend が古い設定のまま Vite の開発サーバーで動き続けていた)
@@ -133,8 +130,15 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - 容量の上限: `StorageUsageService` が利用者フォルダの実際の中身(隠しファイルを含む)を起動時と10分ごとに測って
   `User.used_bytes` に保存し、Web からの保存で上限(`quota_bytes`)を超えるなら 413 で断る。端末からの書き込みは制限しない
   (ext4 のプロジェクトクォータは HDD で有効になっていない)
-- SSH コンテナの 22 番はループバック(`127.0.0.1`)にだけ公開する(`ssh.service.ts`)。ブラウザ端末も
-  SSH ゲートウェイも `docker exec` で接続するので、LAN に公開する必要はない。この設定は新しく作るコンテナから効く
+- 端末のコンテナ(`ssh.service.ts` の `provisionContainer`)はポートを公開せず、sshd も動かさない。ブラウザの端末は
+  `docker exec` でシェルを開く。コマンドは `sleep infinity` で上書きし(イメージの既定の CMD は sshd のまま。
+  `entrypoint.sh` の sshd の設定と `PUBLIC_KEY` は使っていない)、`Init: true` で tini を PID 1 にする。
+  `LANG=C.UTF-8` を渡す(イメージに locale の設定が無い)。作ったとき・起動したときは、`entrypoint.sh` が
+  コンテナの中に利用者を作り終えるまで待ってからシェルを開く(`waitForUser`。待たないと1回目が失敗する)。
+  コンテナを作るのは端末を開いたとき(`ensureContainerRunning`)だけで、作り直すときは以前のコンテナと記録を消す。
+  Docker を直接扱うのは `SshService` だけにする
+- 端末の出力はバイト列(UTF-8)なので、`terminal.gateway.ts` は `StringDecoder` で文字に直してから送る
+  (xterm.js は文字列を UTF-16 の文字として表示する)。「開始」は接続時の確認が終わってから扱う
 - **SSH コンテナのイメージ `kawamonn-ssh-base:latest` は `infrastructure/ssh-provisioning/` の Dockerfile と
   `entrypoint.sh` で作る。** 同じ目的の古い `infrastructure/docker/ssh-env/` と、podman を使っていた頃の
   `ssh-provisioning/provision.sh` は使われておらず、削除した
@@ -149,6 +153,16 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   (変わるのは新しく作るコンテナから。既存のコンテナを作り直すと、ホーム以外の場所に入れたものは消える)
 - 期限切れで削除(`status=deleted`)になったユーザーは、行が DB に残っていても、ログイン(`validateUser`。パスワード照合後に
   照合失敗と同じエラーで拒否)・HTTP の認証(`JwtStrategy`)・ブラウザ端末(`terminal.gateway.ts`)のすべてで拒否する
+- **管理者として扱うのは、確認コード(OTP)を通して発行したトークン(`/auth/admin/verify`、`role: 'admin'`)で、
+  DB でも今も管理者のときだけ**(`JwtStrategy` の `effectiveRole`)。通常のログイン(`/auth/login`)のトークンは
+  管理者のアカウントでも一般の利用者として扱う。利用者フォルダの置き場所(管理者は `/home/pi/hdd/ssh/<名前>`)は
+  DB の役割で決める(`userHomePath`)。管理者の操作は、だれが行ったかを AuditLog(`actor_id`)に残す
+- パスワードのハッシュは `src/common/password.ts` だけで作る・照合する(argon2。古い bcrypt のハッシュは照合でき、
+  ログインに成功したら argon2 で作り直す)。メールは `src/mail/mail.service.ts` だけで送る(SMTP の設定はここ1か所)
+- 管理画面の容量の「GB」は 1024^3 バイト(DB の既定の 20GiB = 21474836480 と同じ)。容量の変更は
+  `POST /admin/users/:id/quota`(`quota_gb`)、`PUT /admin/users/:id` はメールアドレスだけ
+- アプリ全体の設定(helmet・接頭辞・CORS・本文の上限・検証)は `src/app-setup.ts` の `setupApp()`。本番(`main.ts`)と
+  e2e テストで同じものを使う。JSON の本文は 10MB まで(Web のエディタの保存)、アップロードと読み込みは 100MB まで
 - Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
   管理している(`storage.kawamonn.com` → frontend)。リポジトリにトンネルの設定ファイルは置かない
   (以前あった `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていなかったので削除した)
@@ -173,5 +187,5 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - モニタリング: `kawamonn-storage/monitoring/healthcheck.sh` が5分毎にcron実行。障害時はPM2再起動を
   試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。Pi 本体や回線が
   止まった場合は、Cloudflare の通知機能(トンネルの状態)でメールが届く
-- 未実装・既知のギャップ(ユーザーに正直に伝えること): ファイル共有機能(DBスキーマのみ先行)、
-  TOTP二段階認証(未実装。依存パッケージも削除済み)
+- 未実装・既知のギャップ(ユーザーに正直に伝えること): ファイル共有機能(未実装。DB のテーブルも削除済み)、
+  TOTP二段階認証(未実装。依存パッケージも削除済み)、Web からの 100MB を超えるファイルのダウンロード

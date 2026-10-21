@@ -34,7 +34,6 @@ export interface FileEntry {
   size: number;
   mtime: Date;
   mime: string;
-  readonly: boolean;
 }
 
 /**
@@ -131,7 +130,6 @@ export class FileBrowserService {
         size: i.size,
         mtime: new Date(i.mtimeMs),
         mime: i.type === 'dir' ? 'directory' : guessMime(i.name),
-        readonly: false,
       }));
 
     // フォルダが先、次に名前順

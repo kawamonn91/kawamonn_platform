@@ -4,7 +4,6 @@ import { EmailDto } from './email.dto';
 import { LoginDto } from './login.dto';
 import { RegisterDto } from './register.dto';
 import { ResetPasswordDto } from './reset-password.dto';
-import { VerifyDto } from './verify.dto';
 import { AdminVerifyDto } from './admin-verify.dto';
 
 describe('EmailDto', () => {
@@ -126,22 +125,6 @@ describe('ResetPasswordDto', () => {
       plainToInstance(ResetPasswordDto, { new_password: 'newpassword1' }),
     );
     expect(errors.some((e) => e.property === 'token')).toBe(true);
-  });
-});
-
-describe('VerifyDto', () => {
-  it('accepts a valid payload', async () => {
-    const errors = await validate(
-      plainToInstance(VerifyDto, { email: 'a@example.com', code: '123456' }),
-    );
-    expect(errors).toHaveLength(0);
-  });
-
-  it('rejects a missing code', async () => {
-    const errors = await validate(
-      plainToInstance(VerifyDto, { email: 'a@example.com' }),
-    );
-    expect(errors.some((e) => e.property === 'code')).toBe(true);
   });
 });
 
