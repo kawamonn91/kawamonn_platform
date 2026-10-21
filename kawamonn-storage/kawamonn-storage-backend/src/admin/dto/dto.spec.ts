@@ -66,6 +66,27 @@ describe('CreateUserDto', () => {
     expect(errors.some((e) => e.property === 'password')).toBe(true);
   });
 
+  it('容量は GiB の整数で受け取る', async () => {
+    const ok = await validate(
+      plainToInstance(CreateUserDto, { email: 'a@example.com', quota_gb: 30 }),
+    );
+    expect(ok).toHaveLength(0);
+    const bad = await validate(
+      plainToInstance(CreateUserDto, { email: 'a@example.com', quota_gb: 1.5 }),
+    );
+    expect(bad.some((e) => e.property === 'quota_gb')).toBe(true);
+  });
+
+  it('パスにならない利用者名は受け付けない', async () => {
+    const errors = await validate(
+      plainToInstance(CreateUserDto, {
+        email: 'a@example.com',
+        account_name: '..',
+      }),
+    );
+    expect(errors.some((e) => e.property === 'account_name')).toBe(true);
+  });
+
   it('rejects a role outside user/admin', async () => {
     const errors = await validate(
       plainToInstance(CreateUserDto, {
@@ -92,6 +113,13 @@ describe('UpdateQuotaDto', () => {
     expect(errors.some((e) => e.property === 'quota_gb')).toBe(true);
   });
 
+  it('大きすぎる値は受け付けない', async () => {
+    const errors = await validate(
+      plainToInstance(UpdateQuotaDto, { quota_gb: 1e9 }),
+    );
+    expect(errors.some((e) => e.property === 'quota_gb')).toBe(true);
+  });
+
   it('rejects a non-integer', async () => {
     const errors = await validate(
       plainToInstance(UpdateQuotaDto, { quota_gb: 1.5 }),
@@ -101,9 +129,13 @@ describe('UpdateQuotaDto', () => {
 });
 
 describe('UpdateUserDto', () => {
-  it('accepts an empty payload (both fields optional)', async () => {
+  it('メールアドレスは必須(容量は POST /admin/users/:id/quota で変える)', async () => {
     const errors = await validate(plainToInstance(UpdateUserDto, {}));
-    expect(errors).toHaveLength(0);
+    expect(errors.some((e) => e.property === 'email')).toBe(true);
+    const ok = await validate(
+      plainToInstance(UpdateUserDto, { email: 'a@example.com' }),
+    );
+    expect(ok).toHaveLength(0);
   });
 
   it('rejects a malformed email when provided', async () => {

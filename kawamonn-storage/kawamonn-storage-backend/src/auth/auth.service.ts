@@ -11,17 +11,16 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import * as bcrypt from 'bcrypt';
-import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, User } from '@prisma/client';
 import { isReservedAccountName } from '../common/reserved-names';
 import {
   ACCOUNT_NAME_RULE_MESSAGE,
   isValidAccountName,
 } from '../common/account-name';
+import { hashPassword, needsRehash, verifyPassword } from '../common/password';
 
 /** 管理者ログインの確認コードの送り先。どの管理者のログインでも運営者に送る(運営者の決定) */
 const ADMIN_OTP_TO = 'kawamonn91@gmail.com';
@@ -37,30 +36,35 @@ export class AuthService {
     private mail: MailService,
   ) {}
 
-  async validateUser(account_name: string, pass: string): Promise<any> {
+  async validateUser(account_name: string, pass: string) {
     const user = await this.usersService.findByAccountName(account_name);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    let isMatch = false;
-    try {
-      if (user.password_hash.startsWith('$argon2')) {
-        isMatch = await argon2.verify(user.password_hash, pass);
-      } else {
-        isMatch = await bcrypt.compare(pass, user.password_hash);
-      }
-    } catch (e) {
-      console.error('Error during password verification fallback', e);
-    }
+    const isMatch = await verifyPassword(user.password_hash, pass);
 
     // 期限切れで削除(status=deleted)になったアカウントは、パスワードが合っていても拒否する。
     // パスワードの照合後に、照合失敗と同じエラーで返し、アカウントの状態を推測させない。
-    if (user && isMatch && user.status !== 'deleted') {
-      const { password_hash, ...result } = user;
-      return result;
+    if (!isMatch || user.status === 'deleted') {
+      throw new UnauthorizedException('Invalid credentials');
     }
-    throw new UnauthorizedException('Invalid credentials');
+
+    // 古い形式(bcrypt)のハッシュは、正しいパスワードが分かったこの機会に argon2 で作り直す
+    if (needsRehash(user.password_hash)) {
+      try {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { password_hash: await hashPassword(pass) },
+        });
+      } catch (e) {
+        this.logger.warn(`Rehash failed for ${user.account_name}: ${e}`);
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password_hash, ...result } = user;
+    return result;
   }
 
   async login(loginDto: LoginDto) {
@@ -104,7 +108,7 @@ export class AuthService {
     return { status: 'OTP Sent successfully' };
   }
 
-  async register(registerDto: RegisterDto & { otp_code?: string }) {
+  async register(registerDto: RegisterDto) {
     if (!registerDto.otp_code) {
       throw new BadRequestException('OTP code required');
     }
@@ -132,7 +136,7 @@ export class AuthService {
 
     // Hash password BEFORE the transaction (argon2 is CPU-intensive ~200ms)
     // to minimize time spent holding the SERIALIZABLE lock.
-    const hashedPassword = await argon2.hash(registerDto.password);
+    const hashedPassword = await hashPassword(registerDto.password);
 
     // Calculate expiry_at for @u-aizu.ac.jp accounts (4 years)
     // Migrated from: Flask register app (apps/register/app.py)
@@ -146,7 +150,7 @@ export class AuthService {
     // All DB reads and writes are atomic to prevent race conditions on:
     //   - account_name uniqueness
     //   - email uniqueness
-    let newUser: any;
+    let newUser: User;
     try {
       newUser = await this.prisma.$transaction(
         async (tx) => {
@@ -373,14 +377,16 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    // Hash new password using Argon2 (consistent with registration)
-    const hashedPassword = await argon2.hash(new_password);
+    const hashedPassword = await hashPassword(new_password);
 
     // Update user and mark token as used
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: resetRecord.user_id },
-        data: { password_hash: hashedPassword },
+        data: {
+          password_hash: hashedPassword,
+          password_last_set_at: new Date(),
+        },
       }),
       this.prisma.passwordResetToken.update({
         where: { id: resetRecord.id },

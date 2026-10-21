@@ -171,7 +171,9 @@ describe('AuthService', () => {
         'correct-password',
       );
       expect(bcrypt.compare).not.toHaveBeenCalled();
-      expect(result.password_hash).toBeUndefined(); // stripped from the returned user
+      expect('password_hash' in result).toBe(false); // stripped from the returned user
+      // argon2 のハッシュは作り直さない
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
     it('falls back to bcrypt for a legacy (non-argon2) hash', async () => {
@@ -189,6 +191,23 @@ describe('AuthService', () => {
         '$2b$10$legacyhash',
       );
       expect(argon2.verify).not.toHaveBeenCalled();
+    });
+
+    it('bcrypt のハッシュは、ログインに成功したら argon2 で作り直す', async () => {
+      mockUsersService.findByAccountName.mockResolvedValue({
+        id: 'u1',
+        account_name: 'alice',
+        password_hash: '$2b$10$legacyhash',
+      });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (argon2.hash as jest.Mock).mockResolvedValue('$argon2id$new');
+
+      await service.validateUser('alice', 'correct-password');
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { password_hash: '$argon2id$new' },
+      });
     });
 
     it('rejects an expired (status=deleted) account even with the correct password', async () => {

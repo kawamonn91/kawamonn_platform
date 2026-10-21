@@ -54,6 +54,9 @@ describe('Admin RolesGuard (e2e)', () => {
   });
 
   afterAll(async () => {
+    await prisma.auditLog.deleteMany({
+      where: { target_id: { in: [regularUserId, adminUserId] } },
+    });
     await prisma.user.deleteMany({
       where: { id: { in: [regularUserId, adminUserId] } },
     });
@@ -97,6 +100,57 @@ describe('Admin RolesGuard (e2e)', () => {
       .get('/api/v1/admin/users')
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
+  });
+
+  describe('管理者の操作', () => {
+    const adminToken = () =>
+      jwtService.sign({
+        sub: adminUserId,
+        account_name: 'irrelevant',
+        role: 'admin',
+      });
+    const asAdmin = (r: request.Test) =>
+      r.set('Authorization', `Bearer ${adminToken()}`);
+
+    it('一覧は items と件数で返す', async () => {
+      const res = await asAdmin(
+        request(app.getHttpServer()).get('/api/v1/admin/users'),
+      ).expect(200);
+      expect(Array.isArray(res.body.items)).toBe(true);
+      expect(res.body.total_count).toBeGreaterThanOrEqual(2);
+    });
+
+    it('容量は GiB で設定し、詳細に操作の記録が出る', async () => {
+      await asAdmin(
+        request(app.getHttpServer()).post(
+          `/api/v1/admin/users/${regularUserId}/quota`,
+        ),
+      )
+        .send({ quota_gb: 20 })
+        .expect(201);
+      const detail = await asAdmin(
+        request(app.getHttpServer()).get(
+          `/api/v1/admin/users/${regularUserId}`,
+        ),
+      ).expect(200);
+      expect(detail.body.quota_bytes).toBe('21474836480');
+      expect(detail.body.audit_logs[0]).toMatchObject({
+        action: 'admin_update_quota',
+        actor_id: adminUserId,
+        target_id: regularUserId,
+      });
+    });
+
+    it('自分自身は削除できず、おかしな ID は 400', async () => {
+      await asAdmin(
+        request(app.getHttpServer()).delete(
+          `/api/v1/admin/users/${adminUserId}`,
+        ),
+      ).expect(400);
+      await asAdmin(
+        request(app.getHttpServer()).get('/api/v1/admin/users/not-a-uuid'),
+      ).expect(400);
+    });
   });
 
   it('rejects an unauthenticated request before the RolesGuard is even reached', async () => {

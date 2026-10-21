@@ -23,7 +23,7 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  register(@Body() registerDto: RegisterDto & { otp_code?: string }) {
+  register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
 

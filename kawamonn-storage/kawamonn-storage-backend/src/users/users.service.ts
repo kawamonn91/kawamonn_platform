@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { User, Prisma } from '@prisma/client';
 import { execFileSync } from 'child_process';
 import { SshService } from '../ssh/ssh.service';
+import { hashPassword, verifyPassword } from '../common/password';
 
 /**
  * 利用者フォルダを保管して消すスクリプト。root で実行するので sudo の許可が要る(本番の pi は全権を持つ)。
@@ -62,32 +63,39 @@ export class UsersService {
     });
   }
 
-  async createUser(data: Prisma.UserCreateInput): Promise<User> {
-    return this.prisma.user.create({
-      data,
+  /** 今のパスワードを確かめてから、新しいパスワードにする */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.findOne({ id: userId });
+    if (!user) throw new BadRequestException('User not found');
+    if (!(await verifyPassword(user.password_hash, currentPassword))) {
+      throw new BadRequestException('現在のパスワードが正しくありません');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        password_hash: await hashPassword(newPassword),
+        password_last_set_at: new Date(),
+      },
     });
   }
 
-  async updateUser(params: {
-    where: Prisma.UserWhereUniqueInput;
-    data: Prisma.UserUpdateInput;
-  }): Promise<User> {
-    const { where, data } = params;
-    return this.prisma.user.update({
-      data,
-      where,
-    });
+  /** 利用者が自分のアカウントを消す(端末のコンテナ、利用者フォルダは保管してから消し、最後に DB の行) */
+  async deleteAccount(userId: string): Promise<void> {
+    const user = await this.findOne({ id: userId });
+    if (!user) throw new BadRequestException('User not found');
+    await this.deprovisionUser(user.account_name);
+    await this.prisma.user.delete({ where: { id: userId } });
   }
 
-  async deleteUser(where: Prisma.UserWhereUniqueInput): Promise<User> {
-    return this.prisma.user.delete({
-      where,
-    });
-  }
-
+  /** 確認コードを作る(10分有効)。同じメールアドレスの前のコードは無効にする */
   async createOtp(email: string, code: string): Promise<void> {
     const expires_at = new Date();
     expires_at.setMinutes(expires_at.getMinutes() + 10);
+    await this.prisma.otpCode.deleteMany({ where: { email } });
     await this.prisma.otpCode.create({
       data: { email, code, expires_at },
     });

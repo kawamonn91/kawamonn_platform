@@ -10,8 +10,6 @@ import {
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { UpdateMeDto } from './dto/update-me.dto';
-import * as argon2 from 'argon2';
-import * as bcrypt from 'bcrypt';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
 
@@ -41,64 +39,22 @@ export class UsersController {
   // パスワードの変更(今のパスワードの確認)を含むので厳しくする
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   async updateMe(@CurrentUser() me: AuthUser, @Body() body: UpdateMeDto) {
-    const user = await this.usersService.findOne({ id: me.id });
-    if (!user) throw new BadRequestException('User not found');
-
-    const updates: any = {};
-
-    // account_name is intentionally immutable: it's used as the Linux OS
-    // username, the SSH sandbox container mount path, and the on-disk
-    // storage directory name. Renaming it in the DB without also renaming
-    // all three would silently break file/SSH access for the account.
-
-    // Update password
-    if (body.new_password) {
-      if (!body.current_password)
-        throw new BadRequestException('現在のパスワードを入力してください');
-
-      // Verify current password
-      let isMatch = false;
-      try {
-        if (user.password_hash.startsWith('$argon2')) {
-          isMatch = await argon2.verify(
-            user.password_hash,
-            body.current_password,
-          );
-        } else {
-          isMatch = await bcrypt.compare(
-            body.current_password,
-            user.password_hash,
-          );
-        }
-      } catch {
-        /* ignore */
-      }
-
-      if (!isMatch)
-        throw new BadRequestException('現在のパスワードが正しくありません');
-      if (body.new_password.length < 8)
-        throw new BadRequestException('パスワードは8文字以上が必要です');
-      updates.password_hash = await argon2.hash(body.new_password);
+    // 利用者名(account_name)は変えられない。利用者フォルダの名前と、端末のコンテナのマウント先に使っているため
+    if (!body.new_password) return { status: '変更なし' };
+    if (!body.current_password) {
+      throw new BadRequestException('現在のパスワードを入力してください');
     }
-
-    if (Object.keys(updates).length === 0) {
-      return { status: '変更なし' };
-    }
-
-    await this.usersService.updateUser({
-      where: { id: me.id },
-      data: updates,
-    });
+    await this.usersService.changePassword(
+      me.id,
+      body.current_password,
+      body.new_password,
+    );
     return { status: '更新しました' };
   }
 
   @Delete('me')
   async deleteMe(@CurrentUser() me: AuthUser) {
-    const user = await this.usersService.findOne({ id: me.id });
-    if (!user) throw new BadRequestException('User not found');
-
-    await this.usersService.deprovisionUser(user.account_name);
-    await this.usersService.deleteUser({ id: me.id });
+    await this.usersService.deleteAccount(me.id);
     return { status: 'アカウントを削除しました' };
   }
 }
