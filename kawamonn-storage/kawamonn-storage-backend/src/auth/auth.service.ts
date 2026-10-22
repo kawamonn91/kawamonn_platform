@@ -15,10 +15,9 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { Prisma, User } from '@prisma/client';
-import { isReservedAccountName } from '../common/reserved-names';
 import {
-  ACCOUNT_NAME_RULE_MESSAGE,
-  isValidAccountName,
+  assertAssignableAccountName,
+  normalizeEmail,
 } from '../common/account-name';
 import { hashPassword, needsRehash, verifyPassword } from '../common/password';
 
@@ -83,7 +82,8 @@ export class AuthService {
     };
   }
 
-  async sendOtp(email: string) {
+  async sendOtp(rawEmail: string) {
+    const email = normalizeEmail(rawEmail);
     if (!email.endsWith('@u-aizu.ac.jp')) {
       throw new BadRequestException(
         'Only @u-aizu.ac.jp addresses are allowed to register.',
@@ -113,8 +113,10 @@ export class AuthService {
       throw new BadRequestException('OTP code required');
     }
 
+    const email = normalizeEmail(registerDto.email);
+
     const isValid = await this.usersService.verifyOtp(
-      registerDto.email,
+      email,
       registerDto.otp_code,
     );
     if (!isValid) {
@@ -122,17 +124,9 @@ export class AuthService {
     }
 
     const account_name =
-      (registerDto.display_name || '').trim() ||
-      registerDto.email.split('@')[0];
+      (registerDto.display_name || '').trim() || email.split('@')[0];
 
-    if (!isValidAccountName(account_name)) {
-      throw new BadRequestException(ACCOUNT_NAME_RULE_MESSAGE);
-    }
-    if (isReservedAccountName(account_name)) {
-      throw new ConflictException(
-        'This account name is reserved and cannot be used.',
-      );
-    }
+    assertAssignableAccountName(account_name);
 
     // Hash password BEFORE the transaction (argon2 is CPU-intensive ~200ms)
     // to minimize time spent holding the SERIALIZABLE lock.
@@ -140,7 +134,7 @@ export class AuthService {
 
     // Calculate expiry_at for @u-aizu.ac.jp accounts (4 years)
     let expiryAt: Date | undefined;
-    if (registerDto.email.toLowerCase().endsWith('@u-aizu.ac.jp')) {
+    if (email.endsWith('@u-aizu.ac.jp')) {
       expiryAt = new Date();
       expiryAt.setFullYear(expiryAt.getFullYear() + 4);
     }
@@ -155,7 +149,7 @@ export class AuthService {
         async (tx) => {
           // Check email uniqueness inside transaction
           const existingEmail = await tx.user.findUnique({
-            where: { email: registerDto.email },
+            where: { email },
           });
           if (existingEmail) {
             throw new ConflictException('Email already registered.');
@@ -174,7 +168,7 @@ export class AuthService {
           // Create user atomically
           return tx.user.create({
             data: {
-              email: registerDto.email,
+              email,
               account_name,
               password_hash: hashedPassword,
               role: 'user',
@@ -273,7 +267,7 @@ export class AuthService {
       throw new BadRequestException('Email is required');
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
 
     // 同じメールアドレス、または同じ接続元からの申請は、1時間に10回まで
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);

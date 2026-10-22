@@ -24,6 +24,7 @@ const SANDBOX_DNS = ['1.1.1.1', '1.0.0.1'];
 const IMAGE = 'kawamonn-ssh-base:latest';
 const CPU_LIMIT = 0.5; // CPU 1個の半分
 const MEMORY_LIMIT_MB = 512;
+const PIDS_LIMIT = 256;
 // 日本語のファイル名や出力を扱えるようにする(イメージには locale の設定が無い。C.UTF-8 は追加の部品なしで使える)
 const LANG_ENV = 'LANG=C.UTF-8';
 
@@ -75,6 +76,7 @@ export class SshService {
           MemorySwap: MEMORY_LIMIT_MB * 1024 * 1024,
           CpuQuota: CPU_LIMIT * 100000,
           CpuPeriod: 100000,
+          PidsLimit: PIDS_LIMIT,
           Binds: [`${hostMountPath}:/home/${username}:rw`],
           NetworkMode: SANDBOX_NETWORK,
           Dns: SANDBOX_DNS,

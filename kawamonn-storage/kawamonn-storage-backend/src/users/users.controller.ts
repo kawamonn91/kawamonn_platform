@@ -12,6 +12,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { UpdateMeDto } from './dto/update-me.dto';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
+import { serializeUserSummary } from '../common/user-serializer';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -22,17 +23,7 @@ export class UsersController {
   async getMe(@CurrentUser() me: AuthUser) {
     const user = await this.usersService.findOne({ id: me.id });
     if (!user) throw new BadRequestException('User not found');
-    return {
-      id: user.id,
-      account_name: user.account_name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      used_bytes: user.used_bytes.toString(),
-      quota_bytes: user.quota_bytes.toString(),
-      expiry_at: user.expiry_at?.toISOString() || null,
-      created_at: user.created_at.toISOString(),
-    };
+    return serializeUserSummary(user);
   }
 
   @Put('me')

@@ -2,14 +2,11 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
     AppShell, Group, Title, Button, Container, Text, Badge,
     Card, Stack, Loader, Alert, Grid, Progress, Tooltip, ActionIcon,
-    ScrollArea, TextInput, Modal, Menu,
 } from '@mantine/core';
 import {
     IconTerminal2, IconPlayerPlay, IconPlayerStop, IconRefresh,
     IconAlertCircle, IconArrowLeft, IconCpu, IconDeviceFloppy,
-    IconPlugConnected, IconPlugConnectedX, IconFolder, IconFile,
-    IconUpload, IconFolderPlus, IconTrash, IconEdit, IconDownload,
-    IconChevronRight, IconHome, IconDots, IconFilePlus, IconFileText,
+    IconPlugConnected, IconPlugConnectedX, IconFolder,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -18,16 +15,9 @@ import { Terminal, type IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import api, { getErrorMessage } from '../api/client';
+import api from '../api/client';
 import { useAuth } from '../AuthContext';
-import { formatBytes, fetchWithRetry, isEditableFile, saveBytesAs } from '../api/files';
-import TextEditorModal from '../components/TextEditorModal';
-import {
-    type StorageEntry,
-    deleteEntry, isValidName, joinPath, listEntries, makeFolder, parentOf,
-    readFileBytes, readFileText, renameEntry, saveErrorMessage, uploadFile, writeText,
-} from '../api/storage';
-import { createLatestTracker } from '../api/latest';
+import SshFileBrowser from '../components/SshFileBrowser';
 
 type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
 
@@ -36,482 +26,6 @@ interface SshStatus {
     resource_usage: { cpu_limit: string; memory_limit: string };
 }
 
-// ファイルブラウザの1件(ストレージ画面と同じ API の形)
-type FileEntry = StorageEntry;
-
-const NAME_RULE_MESSAGE = '名前に「/」「\\」は使えません。「.」「..」だけの名前も使えません。';
-
-// ─────────────────────────────────────────────
-// ファイルブラウザコンポーネント
-// ─────────────────────────────────────────────
-function FileBrowser() {
-    const [currentPath, setCurrentPath] = useState('/');
-    const [entries, setEntries] = useState<FileEntry[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
-    // フォルダ作成
-    const [newFolderModal, setNewFolderModal] = useState(false);
-    const [newFolderName, setNewFolderName] = useState('');
-    // 名前変更
-    const [renameModal, setRenameModal] = useState(false);
-    const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null);
-    const [renameName, setRenameName] = useState('');
-    // ファイルエディタ
-    const [editorModal, setEditorModal] = useState(false);
-    const [editorPath, setEditorPath] = useState('');
-    const [editorContent, setEditorContent] = useState('');
-    const [editorLoading, setEditorLoading] = useState(false);
-    const [editorSaving, setEditorSaving] = useState(false);
-    const [editorIsNew, setEditorIsNew] = useState(false);
-    // 新規ファイル作成
-    const [newFileModal, setNewFileModal] = useState(false);
-    const [newFileName, setNewFileName] = useState('');
-
-    const uploadRef = useRef<HTMLInputElement>(null);
-
-    // 素早くフォルダを移動したとき、遅れて届いた古い一覧(再試行の分を含む)で上書きしないよう、最後に頼んだ結果だけを使う
-    const latestList = useRef(createLatestTracker());
-    const fetchDir = useCallback(async (path: string) => {
-        const id = latestList.current.next();
-        setLoading(true);
-        setError('');
-        try {
-            const items = await fetchWithRetry(() => listEntries(path));
-            if (!latestList.current.isLatest(id)) return;
-            setEntries(items);
-            setCurrentPath(path);
-        } catch (e) {
-            if (latestList.current.isLatest(id)) {
-                setError(getErrorMessage(e, 'ディレクトリを取得できませんでした'));
-            }
-        } finally {
-            if (latestList.current.isLatest(id)) setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { fetchDir('/'); }, [fetchDir]);
-
-    // パンくずリスト生成
-    const breadcrumbs = currentPath === '/'
-        ? [{ label: 'Home', path: '/' }]
-        : [
-            { label: 'Home', path: '/' },
-            ...currentPath.split('/').filter(Boolean).map((part, i, arr) => ({
-                label: part,
-                path: '/' + arr.slice(0, i + 1).join('/'),
-            })),
-        ];
-
-    const navigateUp = () => {
-        if (currentPath === '/') return;
-        const parent = currentPath.split('/').slice(0, -1).join('/') || '/';
-        fetchDir(parent);
-    };
-
-    const handleDownload = async (entry: FileEntry) => {
-        try {
-            saveBytesAs(entry.name, await readFileBytes(entry.path), entry.mime);
-        } catch {
-            setError('ダウンロードに失敗しました');
-        }
-    };
-
-    const handleDelete = async (entry: FileEntry) => {
-        if (!window.confirm(`「${entry.name}」を削除しますか？`)) return;
-        try {
-            await deleteEntry(entry.path);
-            fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, '削除に失敗しました'));
-        }
-    };
-
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
-        if (!files || files.length === 0) return;
-        const file = files[0];
-        // 同じ名前のファイルは1つしか置けないので、上書きになるなら確かめる
-        if (entries.some((en) => en.name === file.name)
-            && !window.confirm(`「${file.name}」は同じ名前のものがあるので上書きされます。よろしいですか？`)) {
-            e.target.value = '';
-            return;
-        }
-        try {
-            await uploadFile(currentPath, file);
-            fetchDir(currentPath);
-        } catch (err) {
-            setError(saveErrorMessage(err, 'アップロードに失敗しました'));
-        }
-        e.target.value = '';
-    };
-
-    const handleMkdir = async () => {
-        const name = newFolderName.trim();
-        if (!name) return;
-        if (!isValidName(name)) { setError(NAME_RULE_MESSAGE); return; }
-        try {
-            await makeFolder(joinPath(currentPath, name));
-            setNewFolderModal(false);
-            setNewFolderName('');
-            fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, 'フォルダ作成に失敗しました'));
-        }
-    };
-
-    const openRename = (entry: FileEntry) => {
-        setRenameTarget(entry);
-        setRenameName(entry.name);
-        setRenameModal(true);
-    };
-
-    const handleRename = async () => {
-        const name = renameName.trim();
-        if (!renameTarget || !name) return;
-        if (!isValidName(name)) { setError(NAME_RULE_MESSAGE); return; }
-        try {
-            await renameEntry(renameTarget.path, joinPath(parentOf(renameTarget.path), name));
-            setRenameModal(false);
-            setRenameTarget(null);
-            fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, '名前変更に失敗しました'));
-        }
-    };
-
-    // テキストファイルをエディタで開く
-    const openEditor = async (entry: FileEntry) => {
-        setEditorPath(entry.path);
-        setEditorIsNew(false);
-        setEditorLoading(true);
-        setEditorModal(true);
-        setEditorContent('');
-        try {
-            setEditorContent(await fetchWithRetry(() => readFileText(entry.path)));
-        } catch (e) {
-            setError(getErrorMessage(e, 'ファイルを読み込めませんでした(自動復旧に失敗しました)'));
-            setEditorModal(false);
-        } finally {
-            setEditorLoading(false);
-        }
-    };
-
-    const handleEditorSave = async () => {
-        setEditorSaving(true);
-        try {
-            await writeText(editorPath, editorContent);
-            setEditorModal(false);
-            fetchDir(currentPath);
-        } catch (e) {
-            setError(saveErrorMessage(e, '保存に失敗しました'));
-        } finally {
-            setEditorSaving(false);
-        }
-    };
-
-    const openNewFile = () => {
-        setNewFileName('');
-        setNewFileModal(true);
-    };
-
-    const handleCreateNewFile = () => {
-        const name = newFileName.trim();
-        if (!name) return;
-        if (!isValidName(name)) { setError(NAME_RULE_MESSAGE); return; }
-        // 保存すると上書きになるので、同じ名前があれば作らない
-        if (entries.some((en) => en.name === name)) {
-            setError(`「${name}」という名前のものがすでにあります`);
-            return;
-        }
-        const relPath = joinPath(currentPath, name);
-        setNewFileModal(false);
-        // 空のエディタを開く
-        setEditorPath(relPath);
-        setEditorContent('');
-        setEditorIsNew(true);
-        setEditorLoading(false);
-        setEditorModal(true);
-    };
-
-    return (
-        <Stack gap={0} style={{ height: '100%' }}>
-            {/* パンくずリスト */}
-            <Group
-                px="sm"
-                py={5}
-                style={{ borderBottom: '1px solid #30363d', background: '#0d1117', flexShrink: 0 }}
-            >
-                <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => fetchDir('/')} title="ホームへ">
-                    <IconHome size={12} />
-                </ActionIcon>
-                {breadcrumbs.map((crumb, i) => (
-                    <Group key={crumb.path} gap={2} wrap="nowrap">
-                        {i > 0 && <IconChevronRight size={9} color="#484f58" />}
-                        <Text
-                            size="xs"
-                            c={i === breadcrumbs.length - 1 ? 'white' : 'blue'}
-                            style={{ cursor: i === breadcrumbs.length - 1 ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
-                            onClick={() => i < breadcrumbs.length - 1 && fetchDir(crumb.path)}
-                        >
-                            {crumb.label}
-                        </Text>
-                    </Group>
-                ))}
-            </Group>
-
-            {/* アクションボタン */}
-            <Group
-                px="xs"
-                py={5}
-                gap={4}
-                style={{ borderBottom: '1px solid #30363d', background: '#161b22', flexShrink: 0 }}
-            >
-                <Button
-                    size="compact-xs"
-                    variant="subtle"
-                    color="blue"
-                    leftSection={<IconFolderPlus size={12} />}
-                    onClick={() => setNewFolderModal(true)}
-                >
-                    新規フォルダ
-                </Button>
-                <Button
-                    size="compact-xs"
-                    variant="subtle"
-                    color="teal"
-                    leftSection={<IconFilePlus size={12} />}
-                    onClick={openNewFile}
-                >
-                    新規ファイル
-                </Button>
-                <Button
-                    size="compact-xs"
-                    variant="subtle"
-                    color="gray"
-                    leftSection={<IconUpload size={12} />}
-                    onClick={() => uploadRef.current?.click()}
-                >
-                    アップロード
-                </Button>
-                <input ref={uploadRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
-                <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => fetchDir(currentPath)} title="再読み込み" style={{ marginLeft: 'auto' }}>
-                    <IconRefresh size={12} />
-                </ActionIcon>
-            </Group>
-
-            {/* エラー表示 */}
-            {error && (
-                <Alert icon={<IconAlertCircle size={14} />} color="red" p="xs" m="xs" withCloseButton onClose={() => setError('')}>
-                    <Text size="xs">{error}</Text>
-                </Alert>
-            )}
-
-            {/* ファイル一覧 */}
-            <ScrollArea style={{ flex: 1 }}>
-                {loading ? (
-                    <Stack align="center" py="xl">
-                        <Loader size="sm" color="blue" />
-                    </Stack>
-                ) : entries.length === 0 ? (
-                    <Stack align="center" py="xl" gap="xs">
-                        <IconFolder size={32} color="#484f58" />
-                        <Text size="xs" c="dimmed">空のディレクトリです</Text>
-                    </Stack>
-                ) : (
-                    <Stack gap={0}>
-                        {currentPath !== '/' && (
-                            <Group
-                                px="sm"
-                                py={6}
-                                gap="xs"
-                                style={{ cursor: 'pointer', borderBottom: '1px solid #21262d' }}
-                                onClick={navigateUp}
-                            >
-                                <IconFolder size={14} color="#58a6ff" />
-                                <Text size="xs" c="dimmed">..</Text>
-                            </Group>
-                        )}
-                        {entries.map(entry => (
-                            <Group
-                                key={entry.path}
-                                px="sm"
-                                py={6}
-                                gap="xs"
-                                justify="space-between"
-                                style={{
-                                    cursor: 'pointer',
-                                    borderBottom: '1px solid #21262d',
-                                    transition: 'background 0.15s',
-                                }}
-                                onMouseEnter={e => (e.currentTarget.style.background = '#161b22')}
-                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                onClick={() => {
-                                    if (entry.isDir) {
-                                        fetchDir(entry.path);
-                                    } else if (isEditableFile(entry.name, entry.mime)) {
-                                        openEditor(entry);
-                                    }
-                                }}
-                            >
-                                <Group gap="xs" wrap="nowrap" style={{ overflow: 'hidden', flex: 1 }}>
-                                    {entry.isDir
-                                        ? <IconFolder size={14} color="#58a6ff" style={{ flexShrink: 0 }} />
-                                        : isEditableFile(entry.name, entry.mime)
-                                            ? <IconFileText size={14} color="#3fb950" style={{ flexShrink: 0 }} />
-                                            : <IconFile size={14} color="#8b949e" style={{ flexShrink: 0 }} />
-                                    }
-                                    <Text size="xs" c="gray.3" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {entry.name}
-                                    </Text>
-                                </Group>
-                                <Group gap={4} wrap="nowrap">
-                                    {!entry.isDir && (
-                                        <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                                            {formatBytes(entry.size)}
-                                        </Text>
-                                    )}
-                                    <Menu shadow="md" width={160} position="bottom-end">
-                                        <Menu.Target>
-                                            <ActionIcon
-                                                size="xs"
-                                                variant="subtle"
-                                                color="gray"
-                                                onClick={e => e.stopPropagation()}
-                                            >
-                                                <IconDots size={12} />
-                                            </ActionIcon>
-                                        </Menu.Target>
-                                        <Menu.Dropdown style={{ background: '#161b22', border: '1px solid #30363d' }}>
-                                            {!entry.isDir && isEditableFile(entry.name, entry.mime) && (
-                                                <Menu.Item
-                                                    leftSection={<IconEdit size={13} />}
-                                                    onClick={e => { e.stopPropagation(); openEditor(entry); }}
-                                                    style={{ color: '#e6edf3', fontSize: 12 }}
-                                                >
-                                                    編集
-                                                </Menu.Item>
-                                            )}
-                                            {!entry.isDir && (
-                                                <Menu.Item
-                                                    leftSection={<IconDownload size={13} />}
-                                                    onClick={e => { e.stopPropagation(); handleDownload(entry); }}
-                                                    style={{ color: '#e6edf3', fontSize: 12 }}
-                                                >
-                                                    ダウンロード
-                                                </Menu.Item>
-                                            )}
-                                            <Menu.Item
-                                                leftSection={<IconEdit size={13} />}
-                                                onClick={e => { e.stopPropagation(); openRename(entry); }}
-                                                style={{ color: '#e6edf3', fontSize: 12 }}
-                                            >
-                                                名前変更
-                                            </Menu.Item>
-                                            <Menu.Item
-                                                leftSection={<IconTrash size={13} />}
-                                                color="red"
-                                                onClick={e => { e.stopPropagation(); handleDelete(entry); }}
-                                                style={{ fontSize: 12 }}
-                                            >
-                                                削除
-                                            </Menu.Item>
-                                        </Menu.Dropdown>
-                                    </Menu>
-                                </Group>
-                            </Group>
-                        ))}
-                    </Stack>
-                )}
-            </ScrollArea>
-
-            {/* フォルダ作成モーダル */}
-            <Modal
-                opened={newFolderModal}
-                onClose={() => { setNewFolderModal(false); setNewFolderName(''); }}
-                title="新しいフォルダ"
-                size="sm"
-                styles={{ content: { background: '#161b22', border: '1px solid #30363d' }, header: { background: '#161b22' }, title: { color: 'white' } }}
-            >
-                <Stack>
-                    <TextInput
-                        placeholder="フォルダ名"
-                        value={newFolderName}
-                        onChange={e => setNewFolderName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleMkdir()}
-                        styles={{ input: { background: '#0d1117', borderColor: '#30363d', color: 'white' } }}
-                        autoFocus
-                    />
-                    <Button onClick={handleMkdir} color="blue" disabled={!newFolderName.trim()}>作成</Button>
-                </Stack>
-            </Modal>
-
-            {/* 名前変更モーダル */}
-            <Modal
-                opened={renameModal}
-                onClose={() => { setRenameModal(false); setRenameTarget(null); }}
-                title="名前変更"
-                size="sm"
-                styles={{ content: { background: '#161b22', border: '1px solid #30363d' }, header: { background: '#161b22' }, title: { color: 'white' } }}
-            >
-                <Stack>
-                    <TextInput
-                        placeholder="新しい名前"
-                        value={renameName}
-                        onChange={e => setRenameName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleRename()}
-                        styles={{ input: { background: '#0d1117', borderColor: '#30363d', color: 'white' } }}
-                        autoFocus
-                    />
-                    <Button onClick={handleRename} color="blue" disabled={!renameName.trim()}>変更</Button>
-                </Stack>
-            </Modal>
-
-            {/* 新規ファイル名入力モーダル */}
-            <Modal
-                opened={newFileModal}
-                onClose={() => setNewFileModal(false)}
-                title="新規ファイルの作成"
-                size="sm"
-                styles={{ content: { background: '#161b22', border: '1px solid #30363d' }, header: { background: '#161b22' }, title: { color: 'white' } }}
-            >
-                <Stack>
-                    <TextInput
-                        placeholder="ファイル名 (e.g. notes.txt, script.py)"
-                        value={newFileName}
-                        onChange={e => setNewFileName(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleCreateNewFile()}
-                        styles={{ input: { background: '#0d1117', borderColor: '#30363d', color: 'white' } }}
-                        autoFocus
-                    />
-                    <Button
-                        onClick={handleCreateNewFile}
-                        color="teal"
-                        leftSection={<IconFilePlus size={14} />}
-                        disabled={!newFileName.trim()}
-                    >
-                        作成して編集
-                    </Button>
-                </Stack>
-            </Modal>
-
-            <TextEditorModal
-                opened={editorModal}
-                path={editorPath}
-                content={editorContent}
-                onChange={setEditorContent}
-                onSave={handleEditorSave}
-                onClose={() => setEditorModal(false)}
-                loading={editorLoading}
-                saving={editorSaving}
-                isNew={editorIsNew}
-            />
-        </Stack>
-    );
-}
-
-// ─────────────────────────────────────────────
-// メインコンポーネント
-// ─────────────────────────────────────────────
 export default function SshDashboard() {
     const navigate = useNavigate();
     const { logout, accountName } = useAuth();
@@ -520,9 +34,6 @@ export default function SshDashboard() {
     const [sessionState, setSessionState] = useState<SessionState>('idle');
     const [errorMsg, setErrorMsg] = useState('');
     const [containerStatus, setContainerStatus] = useState<SshStatus | null>(null);
-    // xtermRef.current 自体は ref なので変化しても再レンダーされない。
-    // render 中に ref を直接読んで「初期化済みか」を判定すると表示が更新されない
-    // タイミングが生まれるため、state としても保持する。
     const [terminalReady, setTerminalReady] = useState(false);
 
     // refs
@@ -531,14 +42,9 @@ export default function SshDashboard() {
     const fitAddonRef = useRef<FitAddon | null>(null);
     const socketRef = useRef<Socket | null>(null);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
-    // キー入力をコンテナへ送る登録。セッションごとに作り直す(残すと、接続し直すたびに登録が重なる)
     const inputListenerRef = useRef<IDisposable | null>(null);
-    // 今のセッションがつながっているか(socket のイベントの中から読むので、state ではなく ref で持つ)
     const connectedRef = useRef(false);
 
-    // ----------------------------------------------
-    // コンテナステータス取得
-    // ----------------------------------------------
     const fetchStatus = useCallback(async () => {
         try {
             if (!accountName) return;
@@ -556,7 +62,7 @@ export default function SshDashboard() {
     }, [fetchStatus]);
 
     // ----------------------------------------------
-    // xterm.js の初期化（DOM mount 後に1回だけ）
+    // xterm.js の初期化（DOM mount 後に1回だけ・同期実行）
     // ----------------------------------------------
     const initTerminal = useCallback(() => {
         if (!terminalRef.current || xtermRef.current) return;
@@ -601,11 +107,15 @@ export default function SshDashboard() {
         term.loadAddon(webLinksAddon);
         term.open(terminalRef.current);
 
-        setTimeout(() => fitAddon.fit(), 50);
+        try {
+            fitAddon.fit();
+        } catch {
+            // まだ非表示の間は fit() が失敗することがあるので、表示された直後の effect でもう一度合わせる
+        }
 
         xtermRef.current = term;
-        setTerminalReady(true);
         fitAddonRef.current = fitAddon;
+        setTerminalReady(true);
 
         // ターミナルリサイズ監視
         const ro = new ResizeObserver(() => {
@@ -625,15 +135,16 @@ export default function SshDashboard() {
         resizeObserverRef.current = ro;
     }, []);
 
-    // セッション状態が "starting" 以降になったらterminalDivをマウントするので、
-    // そのタイミングでxtermを初期化する
+    // 端末要素が表示状態になった直後にサイズを合わせる
     useEffect(() => {
         if (sessionState === 'starting' || sessionState === 'connected') {
-            // 少し待ってからDOMが確実にあることを確認
-            const timer = setTimeout(initTerminal, 100);
-            return () => clearTimeout(timer);
+            try {
+                fitAddonRef.current?.fit();
+            } catch {
+                // ignore
+            }
         }
-    }, [sessionState, initTerminal]);
+    }, [sessionState]);
 
     // ----------------------------------------------
     // アンマウント時クリーンアップ
@@ -649,7 +160,6 @@ export default function SshDashboard() {
     // ----------------------------------------------
     // WebSocket 接続＆ターミナル起動
     // ----------------------------------------------
-    // セッションの後片付け(キー入力の登録を外す)
     const endSession = useCallback(() => {
         connectedRef.current = false;
         inputListenerRef.current?.dispose();
@@ -657,14 +167,20 @@ export default function SshDashboard() {
     }, []);
 
     const handleLaunch = useCallback(async () => {
-        setSessionState('starting');
-        setErrorMsg('');
-
         const token = localStorage.getItem('token');
         if (!token) {
             navigate('/login');
             return;
         }
+
+        // Socket 接続を開始する前に同期的に xterm を初期化し、初期出力の取りこぼしを防ぐ
+        if (terminalRef.current) {
+            terminalRef.current.style.display = 'block';
+        }
+        initTerminal();
+
+        setSessionState('starting');
+        setErrorMsg('');
 
         // 前の接続(エラーで終わったものなど)が残っていれば閉じてから
         socketRef.current?.disconnect();
@@ -680,7 +196,11 @@ export default function SshDashboard() {
         socketRef.current = socket;
 
         socket.on('connect', () => {
-            // 接続成功後にターミナル開始イベント送信
+            try {
+                fitAddonRef.current?.fit();
+            } catch {
+                // ignore
+            }
             const cols = xtermRef.current?.cols || 80;
             const rows = xtermRef.current?.rows || 24;
             socket.emit('start', { cols, rows });
@@ -689,10 +209,8 @@ export default function SshDashboard() {
         socket.on('ready', () => {
             setSessionState('connected');
             connectedRef.current = true;
-            fetchStatus();
+            void fetchStatus();
 
-            // 準備の間に画面の大きさに合わせた端末の幅・高さを、シェルにも伝える
-            // (準備中の大きさの変更は届かないので、伝えないと行の折り返しがずれる)
             try {
                 fitAddonRef.current?.fit();
             } catch {
@@ -702,7 +220,6 @@ export default function SshDashboard() {
                 socket.emit('resize', { cols: xtermRef.current.cols, rows: xtermRef.current.rows });
             }
 
-            // キー入力をコンテナに送信
             inputListenerRef.current?.dispose();
             inputListenerRef.current = xtermRef.current?.onData((data) => {
                 socket.emit('input', { input: data });
@@ -724,7 +241,6 @@ export default function SshDashboard() {
             setSessionState('error');
         });
 
-        // backend が処理を断ったとき(Nest は 'exception' で知らせる)。待ったままにせずエラーにする
         socket.on('exception', (err: { message?: string }) => {
             setErrorMsg(err?.message || 'Terminal error');
             setSessionState('error');
@@ -743,7 +259,7 @@ export default function SshDashboard() {
             endSession();
             setSessionState('idle');
         });
-    }, [navigate, fetchStatus, endSession]);
+    }, [navigate, fetchStatus, endSession, initTerminal]);
 
     // ----------------------------------------------
     // セッション切断
@@ -759,9 +275,6 @@ export default function SshDashboard() {
         setSessionState('idle');
     }, [endSession]);
 
-    // ----------------------------------------------
-    // UI ヘルパー
-    // ----------------------------------------------
     const statusColor: Record<SessionState, string> = {
         idle: 'gray',
         starting: 'yellow',
@@ -817,7 +330,7 @@ export default function SshDashboard() {
                             <ActionIcon
                                 variant="subtle"
                                 color="gray"
-                                onClick={fetchStatus}
+                                onClick={() => void fetchStatus()}
                                 disabled={sessionState === 'starting'}
                             >
                                 <IconRefresh size={16} />
@@ -852,7 +365,6 @@ export default function SshDashboard() {
                         {/* 左: リソース情報 + ファイルブラウザ */}
                         <Grid.Col span={{ base: 12, md: 3 }}>
                             <Stack gap="sm">
-                                {/* コンテナ情報カード */}
                                 <Card
                                     padding="md"
                                     radius="md"
@@ -908,7 +420,6 @@ export default function SshDashboard() {
                                     </Stack>
                                 </Card>
 
-                                {/* コントロールボタン */}
                                 {sessionState === 'idle' || sessionState === 'error' ? (
                                     <Button
                                         fullWidth
@@ -916,7 +427,7 @@ export default function SshDashboard() {
                                         color="blue"
                                         variant="filled"
                                         leftSection={<IconPlayerPlay size={18} />}
-                                        onClick={handleLaunch}
+                                        onClick={() => void handleLaunch()}
                                         loading={false}
                                         style={{
                                             background: 'linear-gradient(135deg, #1f6feb, #388bfd)',
@@ -942,7 +453,6 @@ export default function SshDashboard() {
                                     </Button>
                                 )}
 
-                                {/* ファイルブラウザカード */}
                                 <Card
                                     padding={0}
                                     radius="md"
@@ -955,7 +465,6 @@ export default function SshDashboard() {
                                         flexDirection: 'column',
                                     }}
                                 >
-                                    {/* カードヘッダー */}
                                     <Group
                                         px="sm"
                                         py={6}
@@ -968,11 +477,10 @@ export default function SshDashboard() {
                                         </Group>
                                     </Group>
                                     <div style={{ flex: 1, overflow: 'hidden' }}>
-                                        <FileBrowser />
+                                        <SshFileBrowser />
                                     </div>
                                 </Card>
 
-                                {/* 環境情報カード */}
                                 <Card
                                     padding="md"
                                     radius="md"
@@ -993,10 +501,15 @@ export default function SshDashboard() {
                                         { label: 'Git', color: '#ff7b72' },
                                     ].map(({ label, color }) => (
                                         <Group key={label} gap="xs" mb={4}>
-                                            <div style={{
-                                                width: 6, height: 6, borderRadius: '50%',
-                                                background: color, flexShrink: 0
-                                            }} />
+                                            <div
+                                                style={{
+                                                    width: 6,
+                                                    height: 6,
+                                                    borderRadius: '50%',
+                                                    background: color,
+                                                    flexShrink: 0,
+                                                }}
+                                            />
                                             <Text size="xs" c="gray.3">{label}</Text>
                                         </Group>
                                     ))}
@@ -1014,12 +527,12 @@ export default function SshDashboard() {
                                     border: `1px solid ${sessionState === 'connected' ? '#238636' : '#30363d'}`,
                                     overflow: 'hidden',
                                     transition: 'border-color 0.3s ease',
-                                    boxShadow: sessionState === 'connected'
-                                        ? '0 0 30px rgba(35, 134, 54, 0.15)'
-                                        : 'none',
+                                    boxShadow:
+                                        sessionState === 'connected'
+                                            ? '0 0 30px rgba(35, 134, 54, 0.15)'
+                                            : 'none',
                                 }}
                             >
-                                {/* ターミナルタイトルバー */}
                                 <Group
                                     px="md"
                                     py="xs"
@@ -1049,9 +562,7 @@ export default function SshDashboard() {
                                     </Group>
                                 </Group>
 
-                                {/* ターミナル本体 */}
                                 <div style={{ position: 'relative', minHeight: 480 }}>
-                                    {/* xterm.js のマウント先 (常に存在させてxterm初期化を確実にする) */}
                                     <div
                                         ref={terminalRef}
                                         style={{
@@ -1059,11 +570,13 @@ export default function SshDashboard() {
                                             height: '100%',
                                             minHeight: 480,
                                             padding: '8px 4px',
-                                            display: (sessionState === 'connected' || sessionState === 'starting') ? 'block' : 'none',
+                                            display:
+                                                sessionState === 'connected' || sessionState === 'starting'
+                                                    ? 'block'
+                                                    : 'none',
                                         }}
                                     />
 
-                                    {/* 未起動時のオーバーレイ */}
                                     {(sessionState === 'idle' || sessionState === 'error') && (
                                         <Stack
                                             align="center"
@@ -1071,12 +584,18 @@ export default function SshDashboard() {
                                             style={{ minHeight: 480, padding: 32 }}
                                             gap="lg"
                                         >
-                                            <div style={{
-                                                width: 80, height: 80, borderRadius: '50%',
-                                                background: 'rgba(88,166,255,0.08)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                border: '1px solid rgba(88,166,255,0.2)',
-                                            }}>
+                                            <div
+                                                style={{
+                                                    width: 80,
+                                                    height: 80,
+                                                    borderRadius: '50%',
+                                                    background: 'rgba(88,166,255,0.08)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    border: '1px solid rgba(88,166,255,0.2)',
+                                                }}
+                                            >
                                                 <IconTerminal2 size={36} color="#58a6ff" />
                                             </div>
                                             <div style={{ textAlign: 'center' }}>
@@ -1104,7 +623,7 @@ export default function SshDashboard() {
                                                 size="lg"
                                                 color="blue"
                                                 leftSection={<IconPlayerPlay size={20} />}
-                                                onClick={handleLaunch}
+                                                onClick={() => void handleLaunch()}
                                                 style={{
                                                     background: 'linear-gradient(135deg, #1f6feb, #388bfd)',
                                                     boxShadow: '0 0 24px rgba(88,166,255,0.4)',
@@ -1116,13 +635,13 @@ export default function SshDashboard() {
                                         </Stack>
                                     )}
 
-                                    {/* 起動中スピナー */}
                                     {sessionState === 'starting' && !terminalReady && (
                                         <Stack
                                             align="center"
                                             justify="center"
                                             style={{
-                                                position: 'absolute', inset: 0,
+                                                position: 'absolute',
+                                                inset: 0,
                                                 background: 'rgba(13,17,23,0.85)',
                                                 zIndex: 10,
                                             }}

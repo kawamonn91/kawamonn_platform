@@ -38,6 +38,44 @@ export function isValidName(name: string): boolean {
     return new TextEncoder().encode(name).length <= 255;
 }
 
+export const NAME_RULE_MESSAGE =
+    '名前に「/」「\\」は使えません。「.」「..」だけの名前も使えません。';
+
+/**
+ * 新規作成・名前変更の入力値を検査する。
+ * 問題なければ前後の空白を除いた名前を返し、問題があれば日本語のエラーメッセージを返す。
+ */
+export function validateNewEntryName(
+    rawName: string,
+    existingEntries: StorageEntry[],
+    ignorePath?: string,
+): { name: string; error?: undefined } | { name?: undefined; error: string } {
+    const name = rawName.trim();
+    if (!name) return { error: '名前を入力してください。' };
+    if (!isValidName(name)) return { error: NAME_RULE_MESSAGE };
+    if (existingEntries.some((e) => e.path !== ignorePath && e.name === name)) {
+        return { error: `「${name}」という名前のものがすでにあります` };
+    }
+    return { name };
+}
+
+/** パンくずリストの項目を作る("/a/b" → [{ name: rootLabel, path: "/" }, ...]) */
+export function buildBreadcrumbs(
+    currentPath: string,
+    rootLabel: string,
+): { name: string; path: string }[] {
+    return [
+        { name: rootLabel, path: '/' },
+        ...currentPath
+            .split('/')
+            .filter(Boolean)
+            .map((part, i, all) => ({
+                name: part,
+                path: '/' + all.slice(0, i + 1).join('/'),
+            })),
+    ];
+}
+
 export const QUOTA_MESSAGE = 'ストレージの容量の上限を超えるため、保存できませんでした。';
 export const TOO_LARGE_MESSAGE =
     'ファイルが大きすぎるため、保存できませんでした(アップロードは 100MB、エディタでの保存は 10MB まで)。';

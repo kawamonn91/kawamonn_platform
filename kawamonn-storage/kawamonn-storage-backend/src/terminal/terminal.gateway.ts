@@ -24,6 +24,8 @@ interface TerminalSession {
   username: string;
 }
 
+export const MAX_SESSIONS_PER_USER = 5;
+
 @WebSocketGateway({
   namespace: '/terminal',
   cors: {
@@ -40,8 +42,8 @@ export class TerminalGateway
   private readonly logger = new Logger(TerminalGateway.name);
   // クライアントIDとセッション情報のマッピング
   private sessions = new Map<string, TerminalSession>();
-  // 開始の途中のクライアント(「開始」が続けて届いても、セッションは1つだけ作る)
-  private starting = new Set<string>();
+  // 開始の途中のクライアント(クライアントID → username。「開始」が続けて届いてもセッションは1つだけ作り、上限も数える)
+  private starting = new Map<string, string>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -81,9 +83,19 @@ export class TerminalGateway
       // WebSocket 端末に接続できてしまう。
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub as string },
-        select: { account_name: true, status: true },
+        select: {
+          account_name: true,
+          status: true,
+          password_last_set_at: true,
+        },
       });
-      if (!user || user.status === 'deleted') {
+      if (
+        !user ||
+        user.status === 'deleted' ||
+        (typeof payload.iat === 'number' &&
+          user.password_last_set_at &&
+          payload.iat < Math.floor(user.password_last_set_at.getTime() / 1000))
+      ) {
         this.logger.warn(
           `[${client.id}] 接続拒否: ユーザーが存在しないか失効済み`,
         );
@@ -122,6 +134,18 @@ export class TerminalGateway
     }
   }
 
+  /** 利用者ごとのアクティブまたは起動中のセッション数 */
+  private countUserSessions(username: string): number {
+    let count = 0;
+    for (const s of this.sessions.values()) {
+      if (s.username === username) count++;
+    }
+    for (const [clientId, u] of this.starting.entries()) {
+      if (u === username && !this.sessions.has(clientId)) count++;
+    }
+    return count;
+  }
+
   // --------------------------------------------------
   // ターミナル起動: コンテナを確保しPTYセッションを開始
   // --------------------------------------------------
@@ -141,7 +165,20 @@ export class TerminalGateway
       client.emit('output', '\r\n[Terminal already running]\r\n');
       return;
     }
-    this.starting.add(client.id);
+    if (this.countUserSessions(username) >= MAX_SESSIONS_PER_USER) {
+      this.logger.warn(
+        `[${client.id}] セッション上限超過: ユーザー=${username}`,
+      );
+      client.emit(
+        'output',
+        `\r\n[Too many active terminal sessions (max ${MAX_SESSIONS_PER_USER})]\r\n`,
+      );
+      client.emit('error', {
+        message: `Too many active terminal sessions (max ${MAX_SESSIONS_PER_USER})`,
+      });
+      return;
+    }
+    this.starting.set(client.id, username);
 
     try {
       client.emit('output', '\r\nStarting your sandbox environment...\r\n');

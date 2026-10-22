@@ -68,6 +68,25 @@ describe('TerminalGateway.handleConnection', () => {
     expect(client.data.username).toBeUndefined();
   });
 
+  it('パスワード変更より前に発行されたトークンは切断する', async () => {
+    const passwordSetAt = new Date('2026-10-22T00:00:10.500Z');
+    mockJwt.verify.mockReturnValue({
+      sub: 'u1',
+      account_name: 'alice',
+      iat: Math.floor(passwordSetAt.getTime() / 1000) - 1,
+    });
+    mockPrisma.user.findUnique.mockResolvedValue({
+      account_name: 'alice',
+      role: 'user',
+      status: 'active',
+      password_last_set_at: passwordSetAt,
+    });
+    const client = makeClient('ok');
+    await gateway.handleConnection(client as any);
+    expect(client.disconnect).toHaveBeenCalled();
+    expect(client.data.username).toBeUndefined();
+  });
+
   it('有効なユーザーなら、トークンではなく DB の値で username を設定する', async () => {
     mockJwt.verify.mockReturnValue({
       sub: 'u1',
@@ -230,5 +249,32 @@ describe('TerminalGateway の端末セッション', () => {
     expect(stream.destroy).toHaveBeenCalled();
     gateway.handleInput(client as any, { input: 'x' });
     expect(stream.write).not.toHaveBeenCalled();
+  });
+
+  it('同じ利用者の同時セッション数が上限(5)を超えたら拒否する', async () => {
+    for (let i = 1; i <= 5; i++) {
+      const c = { ...connectedClient(), id: `c-${i}` };
+      await gateway.handleStart(c as any, {});
+    }
+    expect(ssh.createExecSession).toHaveBeenCalledTimes(5);
+
+    const sixth = { ...connectedClient(), id: 'c-6' };
+    await gateway.handleStart(sixth as any, {});
+    expect(ssh.createExecSession).toHaveBeenCalledTimes(5);
+    expect(sixth.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        message: expect.stringMatching(/Too many active terminal sessions/),
+      }),
+    );
+
+    // 別の利用者は影響を受けない
+    const bob = {
+      ...connectedClient(),
+      id: 'c-bob',
+      data: { username: 'bob' },
+    };
+    await gateway.handleStart(bob as any, {});
+    expect(ssh.createExecSession).toHaveBeenCalledTimes(6);
   });
 });

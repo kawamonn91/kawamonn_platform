@@ -29,11 +29,12 @@ log() {
 
 is_app_alive() {
   local app="$1"
-  pm2 jlist 2>/dev/null | "$NODE_BIN" -e "
-    const apps = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-    const app = apps.find(a => a.name === '$app');
-    process.exit(app && app.pid && app.pm2_env.status === 'online' ? 0 : 1);
-  "
+  pm2 jlist 2>/dev/null | "$NODE_BIN" -e '
+    const target = process.argv[1];
+    const apps = JSON.parse(require("fs").readFileSync(0, "utf8"));
+    const app = apps.find(a => a.name === target);
+    process.exit(app && app.pid && app.pm2_env.status === "online" ? 0 : 1);
+  ' "$app"
 }
 
 site_ok() {

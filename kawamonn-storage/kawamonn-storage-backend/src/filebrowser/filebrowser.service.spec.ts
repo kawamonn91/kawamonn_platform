@@ -31,11 +31,15 @@ describe('FileBrowserService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockPrisma.user.findUnique.mockResolvedValue({
+    let currentUsedBytes = 0n;
+    mockPrisma.user.findUnique.mockImplementation(async () => ({
       id: 'u1',
       role: 'admin',
-      used_bytes: 0n,
+      used_bytes: currentUsedBytes,
       quota_bytes: 1_000_000n,
+    }));
+    mockUsage.adjust.mockImplementation(async (_id: string, delta: number) => {
+      currentUsedBytes += BigInt(delta);
     });
     fs.rmSync(testRoot, { recursive: true, force: true });
     fs.mkdirSync(testRoot, { recursive: true });
@@ -149,6 +153,18 @@ describe('FileBrowserService', () => {
       });
       await service.writeFile(TEST_USERNAME, '/f.txt', Buffer.from('12'));
       expect(fs.readFileSync(path.join(testRoot, 'f.txt'), 'utf8')).toBe('12');
+    });
+
+    it('端末で作られたファイルを削除しても used_bytes が負にならないよう減少分を抑える', async () => {
+      fs.writeFileSync(path.join(testRoot, 'term.txt'), '12345');
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        role: 'admin',
+        used_bytes: 2n,
+        quota_bytes: 100n,
+      });
+      await service.deleteItem(TEST_USERNAME, '/term.txt');
+      expect(mockUsage.adjust).toHaveBeenCalledWith('u1', -2);
     });
   });
 

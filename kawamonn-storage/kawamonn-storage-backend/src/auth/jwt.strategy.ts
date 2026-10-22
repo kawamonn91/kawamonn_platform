@@ -14,14 +14,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; role?: string }) {
+  async validate(payload: { sub: string; role?: string; iat?: number }) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
+      select: {
+        id: true,
+        account_name: true,
+        email: true,
+        role: true,
+        status: true,
+        password_last_set_at: true,
+      },
     });
 
-    // 削除済み、または期限切れで削除(status=deleted)になったユーザーのトークンは、
-    // 有効期限内でも受け付けない(ブラウザ端末の terminal.gateway.ts と同じ扱い)
-    if (!user || user.status === 'deleted') {
+    // 削除済み、または期限切れで削除(status=deleted)になったユーザーのトークン、
+    // およびパスワード変更・再設定より前に発行されたトークンは受け付けない
+    // (ブラウザ端末の terminal.gateway.ts と同じ扱い)
+    if (
+      !user ||
+      user.status === 'deleted' ||
+      (typeof payload.iat === 'number' &&
+        user.password_last_set_at &&
+        payload.iat < Math.floor(user.password_last_set_at.getTime() / 1000))
+    ) {
       throw new UnauthorizedException();
     }
 

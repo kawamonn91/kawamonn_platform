@@ -34,8 +34,9 @@ fi
 
 if [ "$ACTION" == "archive" ]; then
     mkdir -p "$ARCHIVE_DIR"
-    tar -czf "$ARCHIVE_DIR/${USERNAME}_$(date +%F).tar.gz" -C "$BASE_DIR" "$USERNAME"
-    echo "Archived to $ARCHIVE_DIR/${USERNAME}_*.tar.gz"
+    ARCHIVE_FILE="$ARCHIVE_DIR/${USERNAME}_$(date +%Y%m%d_%H%M%S).tar.gz"
+    tar -czf "$ARCHIVE_FILE" -C "$BASE_DIR" "$USERNAME"
+    echo "Archived to $ARCHIVE_FILE"
 fi
 
 # Delete

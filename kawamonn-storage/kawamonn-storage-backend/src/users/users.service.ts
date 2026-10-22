@@ -1,9 +1,12 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { User, Prisma } from '@prisma/client';
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { SshService } from '../ssh/ssh.service';
 import { hashPassword, verifyPassword } from '../common/password';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * 利用者フォルダを保管して消すスクリプト。root で実行するので sudo の許可が要る(本番の pi は全権を持つ)。
@@ -35,10 +38,14 @@ export class UsersService {
     }
 
     try {
-      execFileSync('sudo', [DELETE_USER_SCRIPT, account_name, 'archive']);
+      await execFileAsync('sudo', [
+        DELETE_USER_SCRIPT,
+        account_name,
+        'archive',
+      ]);
     } catch (e) {
       this.logger.error(
-        `User storage cleanup failed for ${account_name}: ${e.message}`,
+        `User storage cleanup failed for ${account_name}: ${(e as Error).message}`,
       );
     }
   }
@@ -102,19 +109,23 @@ export class UsersService {
   }
 
   async verifyOtp(email: string, code: string): Promise<boolean> {
+    const now = new Date();
+    await this.prisma.otpCode.deleteMany({
+      where: { email, expires_at: { lte: now } },
+    });
     const otp = await this.prisma.otpCode.findFirst({
       where: {
         email,
         code,
-        expires_at: { gt: new Date() },
+        expires_at: { gt: now },
       },
       orderBy: { created_at: 'desc' },
     });
 
-    if (otp) {
-      await this.prisma.otpCode.delete({ where: { id: otp.id } });
-      return true;
-    }
-    return false;
+    if (!otp) return false;
+    const deleted = await this.prisma.otpCode.deleteMany({
+      where: { id: otp.id },
+    });
+    return deleted.count === 1;
   }
 }

@@ -178,7 +178,11 @@ export class FileBrowserService {
     }
 
     this.run(relPath, () => safeWriteFile(home, relPath, buffer));
-    await this.usage.adjust(user.id, delta);
+    const clampedDelta =
+      delta < 0
+        ? -Math.min(-delta, Math.max(0, Number(user.used_bytes)))
+        : delta;
+    await this.usage.adjust(user.id, clampedDelta);
   }
 
   /** フォルダを作る(途中のフォルダも作る) */
@@ -205,7 +209,10 @@ export class FileBrowserService {
           ? current.size
           : 0;
     this.run(relPath, () => safeRemove(home, relPath));
-    await this.usage.adjust(user.id, -freed);
+    // 端末から作られたファイルを定期計測の前に削除した場合でも、used_bytes が負にならないように下限 0 で抑える
+    const available = Math.max(0, Number(user.used_bytes));
+    const decrement = Math.min(freed, available);
+    await this.usage.adjust(user.id, -decrement);
   }
 
   /** 名前を変える・移す(どちらも利用者フォルダの中) */

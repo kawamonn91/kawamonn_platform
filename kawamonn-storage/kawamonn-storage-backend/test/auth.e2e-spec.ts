@@ -13,6 +13,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
  */
 jest.mock('child_process', () => ({
   ...jest.requireActual('child_process'),
+  execFile: jest.fn(),
   execFileSync: jest.fn(),
   execSync: jest.fn(),
 }));
@@ -97,6 +98,7 @@ describe('Auth (e2e)', () => {
       const created = await prisma.user.findUnique({ where: { email } });
       expect(created).not.toBeNull();
       // ホストの OS アカウントの作成やスクリプトの実行(sudo)をしない
+      expect(childProcess.execFile).not.toHaveBeenCalled();
       expect(childProcess.execFileSync).not.toHaveBeenCalled();
       expect(childProcess.execSync).not.toHaveBeenCalled();
     });

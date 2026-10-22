@@ -73,5 +73,11 @@ export class StorageUsageService implements OnApplicationBootstrap {
       where: { id: userId },
       data: { used_bytes: { increment: BigInt(deltaBytes) } },
     });
+    if (deltaBytes < 0 && this.prisma.user.updateMany) {
+      await this.prisma.user.updateMany({
+        where: { id: userId, used_bytes: { lt: 0n } },
+        data: { used_bytes: 0n },
+      });
+    }
   }
 }

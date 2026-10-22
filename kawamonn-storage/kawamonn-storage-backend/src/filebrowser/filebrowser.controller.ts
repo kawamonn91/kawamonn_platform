@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
 import { FileBrowserService, MAX_FILE_SIZE } from './filebrowser.service';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 import { Response } from 'express';
+import { MkdirDto, RenameDto, WriteTextDto } from './dto/filebrowser.dto';
 
 @Controller('filebrowser')
 @UseGuards(JwtAuthGuard)
@@ -30,9 +31,10 @@ export class FileBrowserController {
     @CurrentUser() me: AuthUser,
     @Query('path') relPath: string = '/',
   ) {
+    const safePath = typeof relPath === 'string' && relPath ? relPath : '/';
     const username = me.account_name;
-    const entries = await this.fileBrowserService.listDir(username, relPath);
-    return { path: relPath, entries };
+    const entries = await this.fileBrowserService.listDir(username, safePath);
+    return { path: safePath, entries };
   }
 
   /** GET /api/v1/filebrowser/read?path=/some/file.txt */
@@ -42,7 +44,9 @@ export class FileBrowserController {
     @Query('path') relPath: string,
     @Res() res: Response,
   ) {
-    if (!relPath) throw new BadRequestException('path is required');
+    if (typeof relPath !== 'string' || !relPath) {
+      throw new BadRequestException('path is required');
+    }
     const username = me.account_name;
     const { buffer, mime, name } = await this.fileBrowserService.readFile(
       username,
@@ -73,12 +77,13 @@ export class FileBrowserController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('No file provided');
+    const safeDir = typeof dirPath === 'string' && dirPath ? dirPath : '/';
     const username = me.account_name;
     // Multer may parse non-ASCII filename as latin1
     const originalName = Buffer.from(file.originalname, 'latin1').toString(
       'utf8',
     );
-    const relPath = `${dirPath === '/' ? '' : dirPath}/${originalName}`.replace(
+    const relPath = `${safeDir === '/' ? '' : safeDir}/${originalName}`.replace(
       /\/+/g,
       '/',
     );
@@ -88,11 +93,10 @@ export class FileBrowserController {
 
   /** POST /api/v1/filebrowser/mkdir  body: { path: "/new/dir" } */
   @Post('mkdir')
-  async mkdir(@CurrentUser() me: AuthUser, @Body('path') relPath: string) {
-    if (!relPath) throw new BadRequestException('path is required');
+  async mkdir(@CurrentUser() me: AuthUser, @Body() body: MkdirDto) {
     const username = me.account_name;
-    await this.fileBrowserService.mkdir(username, relPath);
-    return { success: true, path: relPath };
+    await this.fileBrowserService.mkdir(username, body.path);
+    return { success: true, path: body.path };
   }
 
   /**
@@ -101,16 +105,11 @@ export class FileBrowserController {
    * テキストファイルをサイト上で直接作成・編集する
    */
   @Put('write-text')
-  async writeText(
-    @CurrentUser() me: AuthUser,
-    @Body('path') relPath: string,
-    @Body('content') content: string,
-  ) {
-    if (!relPath) throw new BadRequestException('path is required');
+  async writeText(@CurrentUser() me: AuthUser, @Body() body: WriteTextDto) {
     const username = me.account_name;
-    const buffer = Buffer.from(content ?? '', 'utf8');
-    await this.fileBrowserService.writeFile(username, relPath, buffer);
-    return { success: true, path: relPath };
+    const buffer = Buffer.from(body.content ?? '', 'utf8');
+    await this.fileBrowserService.writeFile(username, body.path, buffer);
+    return { success: true, path: body.path };
   }
 
   /** DELETE /api/v1/filebrowser/delete?path=/some/file */
@@ -119,7 +118,9 @@ export class FileBrowserController {
     @CurrentUser() me: AuthUser,
     @Query('path') relPath: string,
   ) {
-    if (!relPath) throw new BadRequestException('path is required');
+    if (typeof relPath !== 'string' || !relPath) {
+      throw new BadRequestException('path is required');
+    }
     const username = me.account_name;
     await this.fileBrowserService.deleteItem(username, relPath);
     return { success: true };
@@ -127,15 +128,9 @@ export class FileBrowserController {
 
   /** PATCH /api/v1/filebrowser/rename  body: { oldPath, newPath } */
   @Patch('rename')
-  async rename(
-    @CurrentUser() me: AuthUser,
-    @Body('oldPath') oldPath: string,
-    @Body('newPath') newPath: string,
-  ) {
-    if (!oldPath || !newPath)
-      throw new BadRequestException('oldPath and newPath are required');
+  async rename(@CurrentUser() me: AuthUser, @Body() body: RenameDto) {
     const username = me.account_name;
-    await this.fileBrowserService.rename(username, oldPath, newPath);
+    await this.fileBrowserService.rename(username, body.oldPath, body.newPath);
     return { success: true };
   }
 }

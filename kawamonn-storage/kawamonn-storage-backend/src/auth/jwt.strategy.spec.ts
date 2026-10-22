@@ -95,4 +95,36 @@ describe('JwtStrategy.validate', () => {
       UnauthorizedException,
     );
   });
+
+  it('パスワード変更より前に発行されたトークン(iat < password_last_set_at)は拒否する', async () => {
+    const passwordSetAt = new Date('2026-10-22T00:00:10.500Z');
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      account_name: 'alice',
+      email: 'alice@u-aizu.ac.jp',
+      role: 'user',
+      status: 'active',
+      password_last_set_at: passwordSetAt,
+    });
+    const issuedBeforeSec = Math.floor(passwordSetAt.getTime() / 1000) - 1;
+    await expect(
+      strategy.validate({ sub: 'u1', iat: issuedBeforeSec }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('パスワード設定と同じ秒(または後)に発行されたトークンは受け付ける', async () => {
+    const passwordSetAt = new Date('2026-10-22T00:00:10.850Z');
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 'u1',
+      account_name: 'alice',
+      email: 'alice@u-aizu.ac.jp',
+      role: 'user',
+      status: 'active',
+      password_last_set_at: passwordSetAt,
+    });
+    const sameSecondSec = Math.floor(passwordSetAt.getTime() / 1000);
+    await expect(
+      strategy.validate({ sub: 'u1', iat: sameSecondSec }),
+    ).resolves.toMatchObject({ id: 'u1', account_name: 'alice' });
+  });
 });

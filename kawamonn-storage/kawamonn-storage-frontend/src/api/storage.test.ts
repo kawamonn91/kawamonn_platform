@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-    QUOTA_MESSAGE, TOO_LARGE_MESSAGE, isQuotaExceeded, isValidName, joinPath, parentOf, saveErrorMessage,
+    NAME_RULE_MESSAGE, QUOTA_MESSAGE, TOO_LARGE_MESSAGE, buildBreadcrumbs,
+    isQuotaExceeded, isValidName, joinPath, parentOf, saveErrorMessage, validateNewEntryName,
 } from './storage';
 
 describe('storage のパスの扱い', () => {
@@ -40,5 +41,28 @@ describe('storage のパスの扱い', () => {
         expect(saveErrorMessage({ response: { status: 413, data: { message: 'File too large' } } }, 'x'))
             .toBe(TOO_LARGE_MESSAGE);
         expect(saveErrorMessage(new Error('boom'), '保存に失敗しました')).toBe('保存に失敗しました');
+    });
+
+    it('validateNewEntryName: 空白除去・禁止文字・重複チェックを行う', () => {
+        const entries = [
+            { name: 'existing.txt', path: '/existing.txt', isDir: false, size: 1, mtime: '', mime: 'text/plain' },
+        ];
+        expect(validateNewEntryName('  ok.txt  ', entries)).toEqual({ name: 'ok.txt' });
+        expect(validateNewEntryName('..', entries)).toEqual({ error: NAME_RULE_MESSAGE });
+        expect(validateNewEntryName('existing.txt', entries)).toEqual({
+            error: '「existing.txt」という名前のものがすでにあります',
+        });
+        expect(validateNewEntryName('existing.txt', entries, '/existing.txt')).toEqual({
+            name: 'existing.txt',
+        });
+    });
+
+    it('buildBreadcrumbs: パスからパンくずリストを作る', () => {
+        expect(buildBreadcrumbs('/', 'マイファイル')).toEqual([{ name: 'マイファイル', path: '/' }]);
+        expect(buildBreadcrumbs('/a/b', 'Home')).toEqual([
+            { name: 'Home', path: '/' },
+            { name: 'a', path: '/a' },
+            { name: 'b', path: '/a/b' },
+        ]);
     });
 });

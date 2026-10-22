@@ -1,3 +1,6 @@
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { isReservedAccountName } from './reserved-names';
+
 /**
  * account_name は、そのままホスト上の利用者フォルダの名前
  * (/home/pi/hdd/ssh/users/{account_name}、管理者は /home/pi/hdd/ssh/{account_name})と、
@@ -16,4 +19,21 @@ export const ACCOUNT_NAME_RULE_MESSAGE =
 
 export function isValidAccountName(name: unknown): name is string {
   return typeof name === 'string' && ACCOUNT_NAME_PATTERN.test(name);
+}
+
+/** 新規作成・登録時に利用者名として割り当て可能か検査する(規則外は 400、予約語は 409) */
+export function assertAssignableAccountName(name: string): void {
+  if (!isValidAccountName(name)) {
+    throw new BadRequestException(ACCOUNT_NAME_RULE_MESSAGE);
+  }
+  if (isReservedAccountName(name)) {
+    throw new ConflictException(
+      'This account name is reserved and cannot be used.',
+    );
+  }
+}
+
+/** メールアドレスの正規化(前後の空白除去と小文字化) */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }

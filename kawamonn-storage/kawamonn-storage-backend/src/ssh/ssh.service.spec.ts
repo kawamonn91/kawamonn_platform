@@ -74,6 +74,7 @@ describe('SshService', () => {
       );
       expect(opts.Cmd).toEqual(['sleep', 'infinity']);
       expect(opts.HostConfig.Init).toBe(true);
+      expect(opts.HostConfig.PidsLimit).toBe(256);
       expect(opts.HostConfig.Binds).toEqual([
         expect.stringMatching(/\/users\/alice:\/home\/alice:rw$/),
       ]);

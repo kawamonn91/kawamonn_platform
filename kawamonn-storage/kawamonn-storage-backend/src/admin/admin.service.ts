@@ -13,40 +13,18 @@ import { MailService } from '../mail/mail.service';
 import { AuthUser } from '../auth/current-user.decorator';
 import { generateTempPassword } from '../common/random-password';
 import { hashPassword } from '../common/password';
-import { isReservedAccountName } from '../common/reserved-names';
 import {
-  ACCOUNT_NAME_RULE_MESSAGE,
-  isValidAccountName,
+  assertAssignableAccountName,
+  normalizeEmail,
 } from '../common/account-name';
+import {
+  USER_LIST_FIELDS,
+  serializeUserSummary,
+} from '../common/user-serializer';
 import { CreateUserDto } from './dto/create-user.dto';
 
 /** 容量の単位。画面の「GB」も 1024^3 バイトで数える(DB の既定の 20GiB = 21474836480 と同じ) */
 const GIB = BigInt(1024) ** BigInt(3);
-
-const USER_LIST_FIELDS = {
-  id: true,
-  account_name: true,
-  email: true,
-  role: true,
-  status: true,
-  quota_bytes: true,
-  used_bytes: true,
-  expiry_at: true,
-  created_at: true,
-} satisfies Prisma.UserSelect;
-
-type ListedUser = Prisma.UserGetPayload<{ select: typeof USER_LIST_FIELDS }>;
-
-/** 画面に返す形(BigInt と日時は文字列にする) */
-function toListItem(u: ListedUser) {
-  return {
-    ...u,
-    quota_bytes: u.quota_bytes.toString(),
-    used_bytes: u.used_bytes.toString(),
-    created_at: u.created_at.toISOString(),
-    expiry_at: u.expiry_at?.toISOString() ?? null,
-  };
-}
 
 function isUniqueViolation(e: unknown): boolean {
   return (
@@ -115,7 +93,7 @@ export class AdminService {
     ]);
 
     return {
-      items: users.map(toListItem),
+      items: users.map(serializeUserSummary),
       total_count: total,
       page: current,
       per_page: take,
@@ -142,7 +120,7 @@ export class AdminService {
     });
 
     return {
-      ...toListItem(user),
+      ...serializeUserSummary(user),
       updated_at: user.updated_at.toISOString(),
       last_reminder_sent: user.last_reminder_sent?.toISOString() ?? null,
       password_last_set_at: user.password_last_set_at?.toISOString() ?? null,
@@ -155,22 +133,16 @@ export class AdminService {
 
   /** 利用者を作る。パスワードを省くと仮パスワードを作って返す(一度だけ表示する) */
   async createUser(dto: CreateUserDto, actor: AuthUser) {
-    const account_name = dto.account_name || dto.email.split('@')[0];
-    if (!isValidAccountName(account_name)) {
-      throw new BadRequestException(ACCOUNT_NAME_RULE_MESSAGE);
-    }
-    if (isReservedAccountName(account_name)) {
-      throw new ConflictException(
-        'This account name is reserved and cannot be used.',
-      );
-    }
+    const email = normalizeEmail(dto.email);
+    const account_name = dto.account_name || email.split('@')[0];
+    assertAssignableAccountName(account_name);
     const password = dto.password || generateTempPassword();
 
     let created;
     try {
       created = await this.prisma.user.create({
         data: {
-          email: dto.email,
+          email,
           account_name,
           password_hash: await hashPassword(password),
           role: dto.role || 'user',
@@ -197,7 +169,8 @@ export class AdminService {
   }
 
   /** メールアドレスを変える */
-  async updateEmail(id: string, email: string, actor: AuthUser) {
+  async updateEmail(id: string, rawEmail: string, actor: AuthUser) {
+    const email = normalizeEmail(rawEmail);
     const user = await this.findUserOrThrow(id);
     try {
       await this.prisma.user.update({ where: { id }, data: { email } });
