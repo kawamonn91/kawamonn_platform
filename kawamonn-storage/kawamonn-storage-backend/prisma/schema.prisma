@@ -56,14 +56,21 @@ model SshContainer {
   @@index([username])
 }
 
-model OtpCode {
-  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  email      String   @db.VarChar(255)
-  code       String   @db.VarChar(10)
-  expires_at DateTime @db.Timestamptz(6)
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+enum OtpPurpose {
+  registration
+  admin_login
+}
 
-  @@index([email])
+model OtpCode {
+  id          String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email       String      @db.VarChar(255)
+  code_hash   String      @db.VarChar(256)
+  purpose     OtpPurpose  @default(registration)
+  expires_at  DateTime    @db.Timestamptz(6)
+  consumed_at DateTime?   @db.Timestamptz(6)
+  created_at  DateTime    @default(now()) @db.Timestamptz(6)
+
+  @@index([email, purpose])
   @@index([expires_at])
 }
 

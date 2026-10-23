@@ -1,21 +1,22 @@
 import { useRef, useState } from 'react';
 import {
-    ActionIcon, Alert, Button, Group, Loader, Menu, Modal, ScrollArea, Stack, Text, TextInput,
+    ActionIcon, Alert, Button, Group, Loader, Menu, ScrollArea, Stack, Text,
 } from '@mantine/core';
 import {
     IconAlertCircle, IconChevronRight, IconDots, IconDownload, IconEdit,
     IconFile, IconFilePlus, IconFileText, IconFolder, IconFolderPlus,
     IconHome, IconRefresh, IconTrash, IconUpload,
 } from '@tabler/icons-react';
-import { getErrorMessage } from '../api/client';
 import { formatBytes, isEditableFile } from '../api/files';
-import {
-    type StorageEntry,
-    deleteEntry, joinPath, makeFolder, parentOf,
-    renameEntry, saveErrorMessage, uploadFile, validateNewEntryName,
-} from '../api/storage';
+import { type StorageEntry, joinPath } from '../api/storage';
 import { useFileBrowser } from '../hooks/useFileBrowser';
 import TextEditorModal from './TextEditorModal';
+import {
+    ConfirmModal,
+    RenameModal,
+    NewFolderModal,
+    NewFileModal,
+} from './FileBrowserModals';
 
 export default function SshFileBrowser() {
     const [error, setError] = useState('');
@@ -36,6 +37,22 @@ export default function SshFileBrowser() {
         closeEditor,
         saveEditor,
         downloadEntry,
+        createFolder,
+        rename,
+        deleteItem,
+        uploadFiles,
+        confirmState,
+        askConfirm,
+        closeConfirm,
+        renameTarget,
+        openRename,
+        closeRename,
+        folderModalOpened,
+        openFolderModal,
+        closeFolderModal,
+        fileModalOpened,
+        openFileModal,
+        closeFileModal,
     } = useFileBrowser({
         rootLabel: 'Home',
         retryReads: true,
@@ -47,17 +64,6 @@ export default function SshFileBrowser() {
         await rawFetchDir(path);
     };
 
-    // フォルダ作成
-    const [newFolderModal, setNewFolderModal] = useState(false);
-    const [newFolderName, setNewFolderName] = useState('');
-    // 名前変更
-    const [renameModal, setRenameModal] = useState(false);
-    const [renameTarget, setRenameTarget] = useState<StorageEntry | null>(null);
-    const [renameName, setRenameName] = useState('');
-    // 新規ファイル作成
-    const [newFileModal, setNewFileModal] = useState(false);
-    const [newFileName, setNewFileName] = useState('');
-
     const uploadRef = useRef<HTMLInputElement>(null);
 
     const navigateUp = () => {
@@ -66,94 +72,24 @@ export default function SshFileBrowser() {
         void fetchDir(parent);
     };
 
-    const handleDelete = async (entry: StorageEntry) => {
-        if (!window.confirm(`「${entry.name}」を削除しますか？`)) return;
-        try {
-            await deleteEntry(entry.path);
-            await fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, '削除に失敗しました'));
-        }
+    const handleDelete = (entry: StorageEntry) => {
+        askConfirm('削除の確認', `「${entry.name}」を削除しますか？`, () => void deleteItem(entry));
     };
 
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
         const file = files[0];
-        if (
-            entries.some((en) => en.name === file.name) &&
-            !window.confirm(`「${file.name}」は同じ名前のものがあるので上書きされます。よろしいですか？`)
-        ) {
-            e.target.value = '';
-            return;
-        }
-        try {
-            await uploadFile(currentPath, file);
-            await fetchDir(currentPath);
-        } catch (err) {
-            setError(saveErrorMessage(err, 'アップロードに失敗しました'));
-        }
         e.target.value = '';
-    };
-
-    const handleMkdir = async () => {
-        const check = validateNewEntryName(newFolderName, entries);
-        if (check.error !== undefined) {
-            setError(check.error);
+        if (entries.some((en) => en.name === file.name)) {
+            askConfirm(
+                '上書きの確認',
+                `「${file.name}」は同じ名前のものがあるので上書きされます。よろしいですか？`,
+                () => void uploadFiles([file]),
+            );
             return;
         }
-        try {
-            await makeFolder(joinPath(currentPath, check.name));
-            setNewFolderModal(false);
-            setNewFolderName('');
-            await fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, 'フォルダ作成に失敗しました'));
-        }
-    };
-
-    const openRename = (entry: StorageEntry) => {
-        setRenameTarget(entry);
-        setRenameName(entry.name);
-        setRenameModal(true);
-    };
-
-    const handleRename = async () => {
-        if (!renameTarget) return;
-        if (renameName.trim() === renameTarget.name) {
-            setRenameModal(false);
-            setRenameTarget(null);
-            return;
-        }
-        const check = validateNewEntryName(renameName, entries, renameTarget.path);
-        if (check.error !== undefined) {
-            setError(check.error);
-            return;
-        }
-        try {
-            await renameEntry(renameTarget.path, joinPath(parentOf(renameTarget.path), check.name));
-            setRenameModal(false);
-            setRenameTarget(null);
-            await fetchDir(currentPath);
-        } catch (e) {
-            setError(getErrorMessage(e, '名前変更に失敗しました'));
-        }
-    };
-
-    const openNewFile = () => {
-        setNewFileName('');
-        setNewFileModal(true);
-    };
-
-    const handleCreateNewFile = () => {
-        const check = validateNewEntryName(newFileName, entries);
-        if (check.error !== undefined) {
-            setError(check.error);
-            return;
-        }
-        const relPath = joinPath(currentPath, check.name);
-        setNewFileModal(false);
-        openNewEditor(relPath, true);
+        void uploadFiles([file]);
     };
 
     return (
@@ -194,7 +130,7 @@ export default function SshFileBrowser() {
                     variant="subtle"
                     color="blue"
                     leftSection={<IconFolderPlus size={12} />}
-                    onClick={() => setNewFolderModal(true)}
+                    onClick={openFolderModal}
                 >
                     新規フォルダ
                 </Button>
@@ -203,7 +139,7 @@ export default function SshFileBrowser() {
                     variant="subtle"
                     color="teal"
                     leftSection={<IconFilePlus size={12} />}
-                    onClick={openNewFile}
+                    onClick={openFileModal}
                 >
                     新規ファイル
                 </Button>
@@ -232,69 +168,75 @@ export default function SshFileBrowser() {
             {/* ファイル一覧 */}
             <ScrollArea style={{ flex: 1 }}>
                 {loading ? (
-                    <Stack align="center" py="xl">
-                        <Loader size="sm" color="blue" />
-                    </Stack>
-                ) : entries.length === 0 ? (
-                    <Stack align="center" py="xl" gap="xs">
-                        <IconFolder size={32} color="#484f58" />
-                        <Text size="xs" c="dimmed">空のディレクトリです</Text>
-                    </Stack>
+                    <Group justify="center" p="xl">
+                        <Loader size="sm" color="gray" />
+                    </Group>
                 ) : (
-                    <Stack gap={0}>
+                    <Stack gap={0} p={4}>
                         {currentPath !== '/' && (
                             <Group
-                                px="sm"
-                                py={6}
+                                px="xs"
+                                py={4}
                                 gap="xs"
-                                style={{ cursor: 'pointer', borderBottom: '1px solid #21262d' }}
                                 onClick={navigateUp}
+                                style={{
+                                    cursor: 'pointer',
+                                    borderRadius: 4,
+                                    color: '#8b949e',
+                                }}
+                                className="file-row"
                             >
-                                <IconFolder size={14} color="#58a6ff" />
-                                <Text size="xs" c="dimmed">..</Text>
+                                <IconFolder size={15} color="#8b949e" />
+                                <Text size="xs">..</Text>
                             </Group>
+                        )}
+                        {entries.length === 0 && currentPath === '/' && (
+                            <Text size="xs" c="dimmed" p="md" ta="center">ファイルはありません</Text>
                         )}
                         {entries.map((entry) => (
                             <Group
                                 key={entry.path}
-                                px="sm"
-                                py={6}
-                                gap="xs"
+                                px="xs"
+                                py={3}
                                 justify="space-between"
                                 style={{
-                                    cursor: 'pointer',
-                                    borderBottom: '1px solid #21262d',
-                                    transition: 'background 0.15s',
+                                    borderRadius: 4,
+                                    cursor: entry.isDir ? 'pointer' : isEditableFile(entry.name, entry.mime) ? 'pointer' : 'default',
                                 }}
-                                onMouseEnter={(e) => (e.currentTarget.style.background = '#161b22')}
-                                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                className="file-row"
                                 onClick={() => {
-                                    if (entry.isDir) {
-                                        void fetchDir(entry.path);
-                                    } else if (isEditableFile(entry.name, entry.mime)) {
-                                        void openEditor(entry.path);
-                                    }
+                                    if (entry.isDir) void fetchDir(entry.path);
+                                    else if (isEditableFile(entry.name, entry.mime)) void openEditor(entry.path);
                                 }}
                             >
-                                <Group gap="xs" wrap="nowrap" style={{ overflow: 'hidden', flex: 1 }}>
+                                <Group gap="xs" style={{ flex: 1, minWidth: 0 }}>
                                     {entry.isDir ? (
-                                        <IconFolder size={14} color="#58a6ff" style={{ flexShrink: 0 }} />
+                                        <IconFolder size={15} color="#58a6ff" style={{ flexShrink: 0 }} />
                                     ) : isEditableFile(entry.name, entry.mime) ? (
-                                        <IconFileText size={14} color="#3fb950" style={{ flexShrink: 0 }} />
+                                        <IconFileText size={15} color="#3fb950" style={{ flexShrink: 0 }} />
                                     ) : (
-                                        <IconFile size={14} color="#8b949e" style={{ flexShrink: 0 }} />
+                                        <IconFile size={15} color="#8b949e" style={{ flexShrink: 0 }} />
                                     )}
-                                    <Text size="xs" c="gray.3" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <Text
+                                        size="xs"
+                                        style={{
+                                            color: entry.isDir ? '#58a6ff' : '#c9d1d9',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                    >
                                         {entry.name}
                                     </Text>
                                 </Group>
-                                <Group gap={4} wrap="nowrap">
+
+                                <Group gap={6}>
                                     {!entry.isDir && (
-                                        <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                        <Text size="xs" c="dimmed" style={{ fontSize: 10 }}>
                                             {formatBytes(entry.size)}
                                         </Text>
                                     )}
-                                    <Menu shadow="md" width={160} position="bottom-end">
+                                    <Menu shadow="md" width={130} position="bottom-end">
                                         <Menu.Target>
                                             <ActionIcon
                                                 size="xs"
@@ -305,12 +247,12 @@ export default function SshFileBrowser() {
                                                 <IconDots size={12} />
                                             </ActionIcon>
                                         </Menu.Target>
-                                        <Menu.Dropdown style={{ background: '#161b22', border: '1px solid #30363d' }}>
+                                        <Menu.Dropdown styles={{ dropdown: { background: '#161b22', borderColor: '#30363d' } }}>
                                             {!entry.isDir && isEditableFile(entry.name, entry.mime) && (
                                                 <Menu.Item
                                                     leftSection={<IconEdit size={13} />}
                                                     onClick={(e) => { e.stopPropagation(); void openEditor(entry.path); }}
-                                                    style={{ color: '#e6edf3', fontSize: 12 }}
+                                                    styles={{ item: { color: '#c9d1d9', fontSize: 12 } }}
                                                 >
                                                     編集
                                                 </Menu.Item>
@@ -319,7 +261,7 @@ export default function SshFileBrowser() {
                                                 <Menu.Item
                                                     leftSection={<IconDownload size={13} />}
                                                     onClick={(e) => { e.stopPropagation(); void downloadEntry(entry); }}
-                                                    style={{ color: '#e6edf3', fontSize: 12 }}
+                                                    styles={{ item: { color: '#c9d1d9', fontSize: 12 } }}
                                                 >
                                                     ダウンロード
                                                 </Menu.Item>
@@ -327,15 +269,15 @@ export default function SshFileBrowser() {
                                             <Menu.Item
                                                 leftSection={<IconEdit size={13} />}
                                                 onClick={(e) => { e.stopPropagation(); openRename(entry); }}
-                                                style={{ color: '#e6edf3', fontSize: 12 }}
+                                                styles={{ item: { color: '#c9d1d9', fontSize: 12 } }}
                                             >
                                                 名前変更
                                             </Menu.Item>
                                             <Menu.Item
-                                                leftSection={<IconTrash size={13} />}
                                                 color="red"
-                                                onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
-                                                style={{ fontSize: 12 }}
+                                                leftSection={<IconTrash size={13} />}
+                                                onClick={(e) => { e.stopPropagation(); handleDelete(entry); }}
+                                                styles={{ item: { fontSize: 12 } }}
                                             >
                                                 削除
                                             </Menu.Item>
@@ -348,75 +290,38 @@ export default function SshFileBrowser() {
                 )}
             </ScrollArea>
 
-            {/* フォルダ作成モーダル */}
-            <Modal
-                opened={newFolderModal}
-                onClose={() => { setNewFolderModal(false); setNewFolderName(''); }}
-                title="新しいフォルダ"
-                size="sm"
-                styles={{ content: { background: '#161b22', border: '1px solid #30363d' }, header: { background: '#161b22' }, title: { color: 'white' } }}
-            >
-                <Stack>
-                    <TextInput
-                        placeholder="フォルダ名"
-                        value={newFolderName}
-                        onChange={(e) => setNewFolderName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && void handleMkdir()}
-                        styles={{ input: { background: '#0d1117', borderColor: '#30363d', color: 'white' } }}
-                        autoFocus
-                    />
-                    <Button onClick={() => void handleMkdir()} color="blue" disabled={!newFolderName.trim()}>作成</Button>
-                </Stack>
-            </Modal>
+            <ConfirmModal
+                opened={confirmState.opened}
+                title={confirmState.title}
+                message={confirmState.message}
+                onConfirm={confirmState.onConfirm}
+                onClose={closeConfirm}
+            />
 
-            {/* 名前変更モーダル */}
-            <Modal
-                opened={renameModal}
-                onClose={() => { setRenameModal(false); setRenameTarget(null); }}
-                title="名前変更"
-                size="sm"
-                styles={{ content: { background: '#161b22', border: '1px solid #30363d' }, header: { background: '#161b22' }, title: { color: 'white' } }}
-            >
-                <Stack>
-                    <TextInput
-                        placeholder="新しい名前"
-                        value={renameName}
-                        onChange={(e) => setRenameName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && void handleRename()}
-                        styles={{ input: { background: '#0d1117', borderColor: '#30363d', color: 'white' } }}
-                        autoFocus
-                    />
-                    <Button onClick={() => void handleRename()} color="blue" disabled={!renameName.trim()}>変更</Button>
-                </Stack>
-            </Modal>
+            <RenameModal
+                opened={renameTarget !== null}
+                initialName={renameTarget?.name ?? ''}
+                onRename={(newName) => {
+                    if (renameTarget) void rename(renameTarget, newName);
+                }}
+                onClose={closeRename}
+            />
 
-            {/* 新規ファイル名入力モーダル */}
-            <Modal
-                opened={newFileModal}
-                onClose={() => setNewFileModal(false)}
-                title="新規ファイルの作成"
-                size="sm"
-                styles={{ content: { background: '#161b22', border: '1px solid #30363d' }, header: { background: '#161b22' }, title: { color: 'white' } }}
-            >
-                <Stack>
-                    <TextInput
-                        placeholder="ファイル名 (e.g. notes.txt, script.py)"
-                        value={newFileName}
-                        onChange={(e) => setNewFileName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCreateNewFile()}
-                        styles={{ input: { background: '#0d1117', borderColor: '#30363d', color: 'white' } }}
-                        autoFocus
-                    />
-                    <Button
-                        onClick={handleCreateNewFile}
-                        color="teal"
-                        leftSection={<IconFilePlus size={14} />}
-                        disabled={!newFileName.trim()}
-                    >
-                        作成して編集
-                    </Button>
-                </Stack>
-            </Modal>
+            <NewFolderModal
+                opened={folderModalOpened}
+                onCreate={(name) => void createFolder(name)}
+                onClose={closeFolderModal}
+            />
+
+            <NewFileModal
+                opened={fileModalOpened}
+                onCreate={(name) => {
+                    const relPath = joinPath(currentPath, name);
+                    closeFileModal();
+                    openNewEditor(relPath, true);
+                }}
+                onClose={closeFileModal}
+            />
 
             <TextEditorModal
                 opened={editorPath !== null}

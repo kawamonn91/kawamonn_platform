@@ -3,7 +3,7 @@ import {
     ActionIcon, AspectRatio, Card, Center, Grid, Group, Menu, Stack, Text,
 } from '@mantine/core';
 import {
-    IconDotsVertical, IconDownload, IconFile, IconFileCode,
+    IconDotsVertical, IconDownload, IconEdit, IconFile, IconFileCode,
     IconFileText, IconFileZip, IconFolder, IconPhoto, IconTrash,
 } from '@tabler/icons-react';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -28,9 +28,10 @@ export interface FileCardProps {
     onOpen: (entry: StorageEntry) => void;
     onDownload: (entry: StorageEntry) => void;
     onDelete: (entry: StorageEntry) => void;
+    onRename?: (entry: StorageEntry) => void;
 }
 
-export default function FileCard({ entry, onOpen, onDownload, onDelete }: FileCardProps) {
+export default function FileCard({ entry, onOpen, onDownload, onDelete, onRename }: FileCardProps) {
     const [thumbUrl, setThumbUrl] = useState<string | null>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const [visible, setVisible] = useState(
@@ -163,6 +164,14 @@ export default function FileCard({ entry, onOpen, onDownload, onDelete }: FileCa
                             >
                                 ダウンロード
                             </Menu.Item>
+                            {onRename && (
+                                <Menu.Item
+                                    leftSection={<IconEdit size={14} />}
+                                    onClick={(e) => { e.stopPropagation(); onRename(entry); }}
+                                >
+                                    名前の変更
+                                </Menu.Item>
+                            )}
                             <Menu.Item
                                 color="red"
                                 leftSection={<IconTrash size={14} />}

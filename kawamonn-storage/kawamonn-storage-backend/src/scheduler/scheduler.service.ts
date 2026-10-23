@@ -158,7 +158,11 @@ export class SchedulerService {
   async purgeExpiredCodes() {
     const now = new Date();
     const [otp, tokens] = await Promise.all([
-      this.prisma.otpCode.deleteMany({ where: { expires_at: { lt: now } } }),
+      this.prisma.otpCode.deleteMany({
+        where: {
+          OR: [{ expires_at: { lt: now } }, { consumed_at: { not: null } }],
+        },
+      }),
       this.prisma.passwordResetToken.deleteMany({
         where: { OR: [{ used: true }, { expires_at: { lt: now } }] },
       }),

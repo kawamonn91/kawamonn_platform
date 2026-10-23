@@ -14,13 +14,14 @@ import { LoginDto } from './dto/login.dto';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { Prisma, User } from '@prisma/client';
+import { OtpPurpose, Prisma, User } from '@prisma/client';
 import {
   assertAssignableAccountName,
   normalizeEmail,
 } from '../common/account-name';
 import { hashPassword, needsRehash, verifyPassword } from '../common/password';
 import { getPublicUrl } from '../common/site-config';
+import { generateOtpCode } from '../common/otp.util';
 
 /** 管理者ログインの確認コードの送り先。どの管理者のログインでも運営者に送る(運営者の決定) */
 const ADMIN_OTP_TO = 'kawamonn91@gmail.com';
@@ -96,8 +97,8 @@ export class AuthService {
     }
 
     // Use CSPRNG for OTP generation (crypto.randomInt is cryptographically secure)
-    const code = crypto.randomInt(100000, 1000000).toString();
-    await this.usersService.createOtp(email, code);
+    const code = generateOtpCode();
+    await this.usersService.createOtp(email, code, OtpPurpose.registration);
 
     await this.mail.send({
       fromName: 'UoA Online',
@@ -119,6 +120,7 @@ export class AuthService {
     const isValid = await this.usersService.verifyOtp(
       email,
       registerDto.otp_code,
+      OtpPurpose.registration,
     );
     if (!isValid) {
       throw new UnauthorizedException('Invalid or expired OTP code');
@@ -229,8 +231,8 @@ export class AuthService {
     }
 
     // Use CSPRNG for admin OTP (admin account requires stronger security)
-    const code = crypto.randomInt(100000, 1000000).toString();
-    await this.usersService.createOtp(user.email, code);
+    const code = generateOtpCode();
+    await this.usersService.createOtp(user.email, code, OtpPurpose.admin_login);
 
     await this.mail.send({
       fromName: 'Kawamonn Security',
@@ -248,7 +250,11 @@ export class AuthService {
       throw new UnauthorizedException('Access denied');
     }
 
-    const isValid = await this.usersService.verifyOtp(user.email, otp_code);
+    const isValid = await this.usersService.verifyOtp(
+      user.email,
+      otp_code,
+      OtpPurpose.admin_login,
+    );
     if (!isValid) {
       throw new UnauthorizedException('Invalid or expired OTP code');
     }

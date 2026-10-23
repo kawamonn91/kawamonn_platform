@@ -1,14 +1,15 @@
 import { ActionIcon, Card, Grid, Group, Menu, Text } from '@mantine/core';
-import { IconDotsVertical, IconFolder, IconTrash } from '@tabler/icons-react';
+import { IconDotsVertical, IconEdit, IconFolder, IconTrash } from '@tabler/icons-react';
 import { type StorageEntry } from '../api/storage';
 
 export interface FolderCardProps {
     entry: StorageEntry;
     onOpen: (entry: StorageEntry) => void;
     onDelete: (entry: StorageEntry) => void;
+    onRename?: (entry: StorageEntry) => void;
 }
 
-export default function FolderCard({ entry, onOpen, onDelete }: FolderCardProps) {
+export default function FolderCard({ entry, onOpen, onDelete, onRename }: FolderCardProps) {
     return (
         <Grid.Col span={{ base: 12, sm: 6, md: 4, lg: 3 }}>
             <Card
@@ -34,6 +35,14 @@ export default function FolderCard({ entry, onOpen, onDelete }: FolderCardProps)
                             </ActionIcon>
                         </Menu.Target>
                         <Menu.Dropdown>
+                            {onRename && (
+                                <Menu.Item
+                                    leftSection={<IconEdit size={14} />}
+                                    onClick={(e) => { e.stopPropagation(); onRename(entry); }}
+                                >
+                                    名前の変更
+                                </Menu.Item>
+                            )}
                             <Menu.Item
                                 color="red"
                                 leftSection={<IconTrash size={14} />}

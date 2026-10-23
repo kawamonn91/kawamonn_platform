@@ -1,11 +1,16 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import { User, Prisma } from '@prisma/client';
+import { User, Prisma, OtpPurpose } from '@prisma/client';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { SshService } from '../ssh/ssh.service';
 import { hashPassword, verifyPassword } from '../common/password';
+import {
+  hashOtpCode,
+  OTP_TTL_MINUTES,
+  MAX_OTP_FAILED_ATTEMPTS,
+} from '../common/otp.util';
 
 const execFileAsync = promisify(execFile);
 
@@ -19,6 +24,7 @@ export const DELETE_USER_SCRIPT =
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
+  private readonly otpFailedAttempts = new Map<string, number>();
 
   constructor(
     private prisma: PrismaService,
@@ -113,34 +119,75 @@ export class UsersService {
     await this.prisma.user.delete({ where: { id: userId } });
   }
 
-  /** 確認コードを作る(10分有効)。同じメールアドレスの前のコードは無効にする */
-  async createOtp(email: string, code: string): Promise<void> {
+  /** 確認コードを作る(10分有効)。同じメールアドレス・用途の前のコードは無効にする */
+  async createOtp(
+    email: string,
+    code: string,
+    purpose: OtpPurpose = OtpPurpose.registration,
+  ): Promise<void> {
+    const key = `${email}:${purpose}`;
+    this.otpFailedAttempts.delete(key);
+
     const expires_at = new Date();
-    expires_at.setMinutes(expires_at.getMinutes() + 10);
-    await this.prisma.otpCode.deleteMany({ where: { email } });
+    expires_at.setMinutes(expires_at.getMinutes() + OTP_TTL_MINUTES);
+
+    await this.prisma.otpCode.updateMany({
+      where: { email, purpose, consumed_at: null },
+      data: { consumed_at: new Date() },
+    });
     await this.prisma.otpCode.create({
-      data: { email, code, expires_at },
+      data: {
+        email,
+        code_hash: hashOtpCode(code),
+        purpose,
+        expires_at,
+      },
     });
   }
 
-  async verifyOtp(email: string, code: string): Promise<boolean> {
+  /** 確認コードを検証する。5回間違えたら無効化 */
+  async verifyOtp(
+    email: string,
+    code: string,
+    purpose: OtpPurpose = OtpPurpose.registration,
+  ): Promise<boolean> {
+    const key = `${email}:${purpose}`;
+    const code_hash = hashOtpCode(code);
     const now = new Date();
-    await this.prisma.otpCode.deleteMany({
-      where: { email, expires_at: { lte: now } },
-    });
+
     const otp = await this.prisma.otpCode.findFirst({
       where: {
         email,
-        code,
+        purpose,
+        code_hash,
+        consumed_at: null,
         expires_at: { gt: now },
       },
       orderBy: { created_at: 'desc' },
     });
 
-    if (!otp) return false;
-    const deleted = await this.prisma.otpCode.deleteMany({
-      where: { id: otp.id },
+    if (!otp) {
+      const attempts = (this.otpFailedAttempts.get(key) ?? 0) + 1;
+      if (attempts >= MAX_OTP_FAILED_ATTEMPTS) {
+        this.otpFailedAttempts.delete(key);
+        await this.prisma.otpCode.updateMany({
+          where: { email, purpose, consumed_at: null },
+          data: { consumed_at: now },
+        });
+      } else {
+        this.otpFailedAttempts.set(key, attempts);
+      }
+      return false;
+    }
+
+    const updated = await this.prisma.otpCode.updateMany({
+      where: { id: otp.id, consumed_at: null },
+      data: { consumed_at: now },
     });
-    return deleted.count === 1;
+    if (updated.count !== 1) {
+      return false;
+    }
+    this.otpFailedAttempts.delete(key);
+    return true;
   }
 }

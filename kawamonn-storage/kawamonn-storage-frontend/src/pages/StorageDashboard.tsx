@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import {
-    AppShell, Group, Title, Button, Container, Text, Card, Grid,
-    ActionIcon, TextInput, Breadcrumbs, Anchor, Center,
-    Stack, Burger, Drawer, Divider, Progress,
+    AppShell, Group, Title, Button, Container, Text, Grid,
+    Breadcrumbs, Anchor, Center, Stack, Burger, Drawer, Divider, Progress, Modal,
 } from '@mantine/core';
 import {
     IconUpload, IconFolder, IconFolderPlus, IconTerminal2,
@@ -10,11 +9,7 @@ import {
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useDisclosure } from '@mantine/hooks';
-import {
-    type StorageEntry,
-    deleteEntry, joinPath, makeFolder,
-    saveErrorMessage, uploadFile, validateNewEntryName, writeText,
-} from '../api/storage';
+import { type StorageEntry, joinPath } from '../api/storage';
 import { formatBytes, isEditableFile, isPreviewable } from '../api/files';
 import api from '../api/client';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -24,6 +19,12 @@ import FolderCard from '../components/FolderCard';
 import FileCard from '../components/FileCard';
 import FilePreviewModal from '../components/FilePreviewModal';
 import { useFileBrowser } from '../hooks/useFileBrowser';
+import {
+    ConfirmModal,
+    RenameModal,
+    NewFolderModal,
+    NewFileModal,
+} from '../components/FileBrowserModals';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -31,17 +32,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 export default function StorageDashboard() {
-    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
-
     const [drawerOpened, { open: openDrawer, close: closeDrawer }] = useDisclosure(false);
-    const [folderFormOpened, { open: openFolderForm, close: closeFolderForm }] = useDisclosure(false);
-    const [newFolderName, setNewFolderName] = useState('');
-
-    const [fileFormOpened, { open: openFileForm, close: closeFileForm }] = useDisclosure(false);
-    const [newFileName, setNewFileName] = useState('');
-
     const [previewEntry, setPreviewEntry] = useState<StorageEntry | null>(null);
+    const [errorModal, setErrorModal] = useState<string | null>(null);
 
     const navigate = useNavigate();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +58,6 @@ export default function StorageDashboard() {
         loading,
         crumbs,
         fetchDir,
-        refresh: fetchFiles,
         editorPath,
         editorContent,
         setEditorContent,
@@ -75,123 +68,73 @@ export default function StorageDashboard() {
         closeEditor,
         saveEditor: handleSaveFile,
         downloadEntry: handleDownload,
+        createFolder,
+        createFile,
+        rename,
+        deleteItem,
+        uploadFiles,
+        uploadProgress,
+        confirmState,
+        askConfirm,
+        closeConfirm,
+        renameTarget,
+        openRename,
+        closeRename,
+        folderModalOpened,
+        openFolderModal,
+        closeFolderModal,
+        fileModalOpened,
+        openFileModal,
+        closeFileModal,
     } = useFileBrowser({
         rootLabel: 'マイファイル',
         onAfterRefresh: () => void fetchUsage(),
-        onError: (msg) => alert(msg),
+        onError: (msg) => setErrorModal(msg),
     });
 
-    const nameTaken = (name: string) => entries.some((e) => e.name === name);
-
-    const handleCreateFolder = async () => {
-        const check = validateNewEntryName(newFolderName, entries);
-        if (check.error !== undefined) {
-            alert(check.error);
-            return;
-        }
-        try {
-            await makeFolder(joinPath(currentPath, check.name));
-            setNewFolderName('');
-            closeFolderForm();
-            await fetchFiles();
-        } catch (err) {
-            console.error('Folder creation failed', err);
-            alert('フォルダの作成に失敗しました');
-        }
-    };
-
-    const handleCreateFile = async () => {
-        const check = validateNewEntryName(newFileName, entries);
-        if (check.error !== undefined) {
-            alert(check.error);
-            return;
-        }
-        const path = joinPath(currentPath, check.name);
-        try {
-            await writeText(path, '');
-            setNewFileName('');
-            closeFileForm();
-            await fetchFiles();
-            // 作ったファイルをそのままエディタで開く
-            openNewEditor(path, false);
-        } catch (err) {
-            console.error('File creation failed', err);
-            alert(saveErrorMessage(err, 'ファイルの作成に失敗しました'));
-        }
-    };
-
-    // 選んだファイルを順に置く。dirOf はファイルごとの置き場所
-    const uploadAll = async (files: File[], dirOf: (file: File) => string, labelOf: (file: File) => string) => {
-        setUploadProgress(0);
-        const failed: string[] = [];
-        const reasons = new Set<string>();
-        for (const [i, file] of files.entries()) {
-            try {
-                await uploadFile(dirOf(file), file);
-            } catch (err) {
-                reasons.add(saveErrorMessage(err, 'アップロードに失敗しました'));
-                failed.push(labelOf(file));
-            }
-            setUploadProgress(Math.round(((i + 1) / files.length) * 100));
-        }
-        setUploadProgress(null);
-        if (failed.length) {
-            alert(`${[...reasons].join('\n')}\n以下のファイルのアップロードに失敗しました:\n${failed.join('\n')}`);
-        }
-        await fetchFiles();
-    };
-
-    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const picked = Array.from(event.target.files ?? []);
         event.target.value = '';
         if (!picked.length) return;
 
-        const conflicts = picked.filter((f) => nameTaken(f.name)).map((f) => f.name);
-        if (
-            conflicts.length &&
-            !window.confirm(
+        const conflicts = picked.filter((f) => entries.some((e) => e.name === f.name)).map((f) => f.name);
+        if (conflicts.length) {
+            askConfirm(
+                '上書きの確認',
                 `次のファイルは同じ名前のものがあるので上書きされます。よろしいですか？\n${conflicts.join('\n')}`,
-            )
-        ) {
+                () => void uploadFiles(picked),
+            );
             return;
         }
-        await uploadAll(picked, () => currentPath, (f) => f.name);
+        void uploadFiles(picked);
     };
 
-    const handleFolderUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFolderUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
         const picked = Array.from(event.target.files ?? []);
         event.target.value = '';
         if (!picked.length) return;
 
         const topName = picked[0].webkitRelativePath.split('/')[0];
-        if (
-            nameTaken(topName) &&
-            !window.confirm(
-                `「${topName}」という名前のものがすでにあります。中の同じ名前のファイルは上書きされます。よろしいですか？`,
-            )
-        ) {
-            return;
-        }
         const dirOf = (file: File) =>
             file.webkitRelativePath.split('/').slice(0, -1).reduce((dir, part) => joinPath(dir, part), currentPath);
-        await uploadAll(picked, dirOf, (f) => f.webkitRelativePath);
-    };
 
-    const handleDelete = async (entry: StorageEntry) => {
-        const label = entry.isDir ? 'フォルダ' : 'ファイル';
-        if (
-            !window.confirm(
-                `"${entry.name}" を削除しますか？${entry.isDir ? '\n※ フォルダ内のファイルも全て削除されます。' : ''}`,
-            )
-        ) {
+        if (entries.some((e) => e.name === topName)) {
+            askConfirm(
+                '上書きの確認',
+                `「${topName}」という名前のものがすでにあります。中の同じ名前のファイルは上書きされます。よろしいですか？`,
+                () => void uploadFiles(picked, dirOf, (f) => f.webkitRelativePath),
+            );
             return;
         }
-        try {
-            await deleteEntry(entry.path);
-            await fetchFiles();
-        } catch {
-            alert(`${label}の削除に失敗しました`);
-        }
+        void uploadFiles(picked, dirOf, (f) => f.webkitRelativePath);
+    };
+
+    const handleDelete = (entry: StorageEntry) => {
+        askConfirm(
+            '削除の確認',
+            `"${entry.name}" を削除しますか？${entry.isDir ? '\n※ フォルダ内のファイルも全て削除されます。' : ''}`,
+            () => void deleteItem(entry),
+        );
     };
 
     const handleOpenFile = (entry: StorageEntry) => {
@@ -208,20 +151,21 @@ export default function StorageDashboard() {
     const files = entries.filter((e) => !e.isDir);
 
     const sidebarJsx = (
-        <Stack h="100%" justify="space-between">
-            <Stack gap="sm">
+        <Stack justify="space-between" h="100%">
+            <Stack gap="xs">
                 <Button
+                    variant="light"
                     leftSection={<IconUpload size={16} />}
                     fullWidth
-                    onClick={() => { fileInputRef.current?.click(); closeDrawer(); }}
+                    onClick={() => fileInputRef.current?.click()}
                 >
                     ファイルをアップロード
                 </Button>
                 <Button
-                    variant="default"
+                    variant="light"
                     leftSection={<IconFolderPlus size={16} />}
                     fullWidth
-                    onClick={() => { folderInputRef.current?.click(); closeDrawer(); }}
+                    onClick={() => folderInputRef.current?.click()}
                 >
                     フォルダをアップロード
                 </Button>
@@ -230,7 +174,7 @@ export default function StorageDashboard() {
                     color="teal"
                     leftSection={<IconPlus size={16} />}
                     fullWidth
-                    onClick={() => { openFolderForm(); closeDrawer(); }}
+                    onClick={() => { openFolderModal(); closeDrawer(); }}
                 >
                     新規フォルダを作成
                 </Button>
@@ -239,7 +183,7 @@ export default function StorageDashboard() {
                     color="cyan"
                     leftSection={<IconFilePlus size={16} />}
                     fullWidth
-                    onClick={() => { openFileForm(); closeDrawer(); }}
+                    onClick={() => { openFileModal(); closeDrawer(); }}
                 >
                     新規ファイルを作成
                 </Button>
@@ -388,7 +332,8 @@ export default function StorageDashboard() {
                                                     key={entry.path}
                                                     entry={entry}
                                                     onOpen={(e) => goTo(e.path)}
-                                                    onDelete={(e) => void handleDelete(e)}
+                                                    onDelete={handleDelete}
+                                                    onRename={openRename}
                                                 />
                                             ))}
                                         </Grid>
@@ -405,67 +350,14 @@ export default function StorageDashboard() {
                                                     entry={entry}
                                                     onOpen={handleOpenFile}
                                                     onDownload={(e) => void handleDownload(e)}
-                                                    onDelete={(e) => void handleDelete(e)}
+                                                    onDelete={handleDelete}
+                                                    onRename={openRename}
                                                 />
                                             ))}
                                         </Grid>
                                     </>
                                 )}
                             </>
-                        )}
-
-                        {folderFormOpened && (
-                            <Card withBorder shadow="sm" radius="md" p="md" mb="md" style={{ maxWidth: 360 }}>
-                                <Group justify="space-between" mb="xs">
-                                    <Text fw={600} size="sm">新規フォルダを作成</Text>
-                                    <ActionIcon variant="subtle" onClick={closeFolderForm} size="sm">
-                                        <IconFolder size={14} />
-                                    </ActionIcon>
-                                </Group>
-                                <TextInput
-                                    placeholder="フォルダ名を入力"
-                                    value={newFolderName}
-                                    onChange={(e) => setNewFolderName(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && void handleCreateFolder()}
-                                    autoFocus
-                                    mb="sm"
-                                />
-                                <Group gap="xs">
-                                    <Button size="sm" onClick={() => void handleCreateFolder()} disabled={!newFolderName.trim()}>
-                                        作成
-                                    </Button>
-                                    <Button size="sm" variant="subtle" color="gray" onClick={closeFolderForm}>
-                                        キャンセル
-                                    </Button>
-                                </Group>
-                            </Card>
-                        )}
-
-                        {fileFormOpened && (
-                            <Card withBorder shadow="sm" radius="md" p="md" mb="md" style={{ maxWidth: 360 }}>
-                                <Group justify="space-between" mb="xs">
-                                    <Text fw={600} size="sm">新規テキストファイルを作成</Text>
-                                    <ActionIcon variant="subtle" onClick={closeFileForm} size="sm">
-                                        <IconFilePlus size={14} />
-                                    </ActionIcon>
-                                </Group>
-                                <TextInput
-                                    placeholder="ファイル名（例: script.sh）"
-                                    value={newFileName}
-                                    onChange={(e) => setNewFileName(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && void handleCreateFile()}
-                                    autoFocus
-                                    mb="sm"
-                                />
-                                <Group gap="xs">
-                                    <Button size="sm" color="cyan" onClick={() => void handleCreateFile()} disabled={!newFileName.trim()}>
-                                        作成
-                                    </Button>
-                                    <Button size="sm" variant="subtle" color="gray" onClick={closeFileForm}>
-                                        キャンセル
-                                    </Button>
-                                </Group>
-                            </Card>
                         )}
 
                         <TextEditorModal
@@ -484,6 +376,50 @@ export default function StorageDashboard() {
                             onClose={() => setPreviewEntry(null)}
                             onDownload={(e) => void handleDownload(e)}
                         />
+
+                        <ConfirmModal
+                            opened={confirmState.opened}
+                            title={confirmState.title}
+                            message={confirmState.message}
+                            onConfirm={confirmState.onConfirm}
+                            onClose={closeConfirm}
+                        />
+
+                        <RenameModal
+                            opened={renameTarget !== null}
+                            initialName={renameTarget?.name ?? ''}
+                            onRename={(newName) => {
+                                if (renameTarget) void rename(renameTarget, newName);
+                            }}
+                            onClose={closeRename}
+                        />
+
+                        <NewFolderModal
+                            opened={folderModalOpened}
+                            onCreate={(name) => void createFolder(name)}
+                            onClose={closeFolderModal}
+                        />
+
+                        <NewFileModal
+                            opened={fileModalOpened}
+                            onCreate={(name) => {
+                                void createFile(name).then((ok) => {
+                                    if (ok) openNewEditor(joinPath(currentPath, name), false);
+                                });
+                            }}
+                            onClose={closeFileModal}
+                        />
+
+                        {errorModal && (
+                            <Modal opened={errorModal !== null} onClose={() => setErrorModal(null)} title="エラー" size="sm">
+                                <Stack gap="md">
+                                    <Text size="sm" c="red">{errorModal}</Text>
+                                    <Group justify="flex-end">
+                                        <Button variant="default" onClick={() => setErrorModal(null)}>閉じる</Button>
+                                    </Group>
+                                </Stack>
+                            </Modal>
+                        )}
                     </Container>
                 </AppShell.Main>
             </AppShell>

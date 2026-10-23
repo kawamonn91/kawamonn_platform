@@ -11,6 +11,7 @@ import {
 import * as argon2 from 'argon2';
 import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
+import { OtpPurpose } from '@prisma/client';
 
 jest.mock('argon2');
 jest.mock('bcrypt');
@@ -89,6 +90,7 @@ describe('AuthService', () => {
       expect(mockUsersService.createOtp).toHaveBeenCalledWith(
         's1234567@u-aizu.ac.jp',
         expect.stringMatching(/^\d{6}$/),
+        OtpPurpose.registration,
       );
       expect(mockMail.send).toHaveBeenCalledWith(
         expect.objectContaining({ to: 's1234567@u-aizu.ac.jp' }),

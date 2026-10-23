@@ -18,7 +18,12 @@ describe('SchedulerService.purgeExpiredCodes', () => {
     await service.purgeExpiredCodes();
 
     expect(prisma.otpCode.deleteMany).toHaveBeenCalledWith({
-      where: { expires_at: { lt: expect.any(Date) } },
+      where: {
+        OR: [
+          { expires_at: { lt: expect.any(Date) } },
+          { consumed_at: { not: null } },
+        ],
+      },
     });
     expect(prisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
       where: { OR: [{ used: true }, { expires_at: { lt: expect.any(Date) } }] },

@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SshService } from '../ssh/ssh.service';
 import { hashPassword } from '../common/password';
 import * as child_process from 'child_process';
+import { OtpPurpose } from '@prisma/client';
 
 jest.mock('child_process', () => ({
   execFile: jest.fn(),
@@ -18,6 +19,7 @@ const mockPrisma = {
     findFirst: jest.fn(),
     delete: jest.fn(),
     deleteMany: jest.fn(),
+    updateMany: jest.fn(),
   },
 };
 const mockSsh = { removeUserContainers: jest.fn() };
@@ -93,31 +95,107 @@ describe('UsersService', () => {
     });
   });
 
+  describe('createOtp', () => {
+    it('以前の未消費コードを無効化し、ハッシュ化したコードを登録する', async () => {
+      mockPrisma.otpCode.updateMany.mockResolvedValue({ count: 1 });
+      mockPrisma.otpCode.create.mockResolvedValue({ id: 'otp-new' });
+
+      await service.createOtp(
+        'alice@u-aizu.ac.jp',
+        '123456',
+        OtpPurpose.registration,
+      );
+
+      expect(mockPrisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: {
+          email: 'alice@u-aizu.ac.jp',
+          purpose: OtpPurpose.registration,
+          consumed_at: null,
+        },
+        data: { consumed_at: expect.any(Date) },
+      });
+      expect(mockPrisma.otpCode.create).toHaveBeenCalledWith({
+        data: {
+          email: 'alice@u-aizu.ac.jp',
+          code_hash: expect.any(String),
+          purpose: OtpPurpose.registration,
+          expires_at: expect.any(Date),
+        },
+      });
+    });
+  });
+
   describe('verifyOtp', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
     it('有効な確認コードを1回だけ消費し、競合した2回目は false にする', async () => {
-      mockPrisma.otpCode.deleteMany
-        .mockResolvedValueOnce({ count: 0 }) // 期限切れ掃除
-        .mockResolvedValueOnce({ count: 1 }); // 対象コードの原子的削除
       mockPrisma.otpCode.findFirst.mockResolvedValue({
         id: 'otp-1',
         email: 'alice@u-aizu.ac.jp',
-        code: '123456',
+        purpose: OtpPurpose.registration,
       });
+      mockPrisma.otpCode.updateMany.mockResolvedValueOnce({ count: 1 });
 
       await expect(
-        service.verifyOtp('alice@u-aizu.ac.jp', '123456'),
+        service.verifyOtp(
+          'alice@u-aizu.ac.jp',
+          '123456',
+          OtpPurpose.registration,
+        ),
       ).resolves.toBe(true);
-      expect(mockPrisma.otpCode.deleteMany).toHaveBeenLastCalledWith({
-        where: { id: 'otp-1' },
+
+      expect(mockPrisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: { id: 'otp-1', consumed_at: null },
+        data: { consumed_at: expect.any(Date) },
       });
 
       // 同時に届いた別のリクエストで既に消されていた場合(count === 0)
-      mockPrisma.otpCode.deleteMany
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 });
+      mockPrisma.otpCode.findFirst.mockResolvedValue({
+        id: 'otp-1',
+        email: 'alice@u-aizu.ac.jp',
+      });
+      mockPrisma.otpCode.updateMany.mockResolvedValueOnce({ count: 0 });
       await expect(
-        service.verifyOtp('alice@u-aizu.ac.jp', '123456'),
+        service.verifyOtp(
+          'alice@u-aizu.ac.jp',
+          '123456',
+          OtpPurpose.registration,
+        ),
       ).resolves.toBe(false);
+    });
+
+    it('5回連続で間違えると該当用途のコードを無効化する', async () => {
+      mockPrisma.otpCode.findFirst.mockResolvedValue(null);
+      mockPrisma.otpCode.updateMany.mockResolvedValue({ count: 1 });
+
+      // 4回失敗
+      for (let i = 0; i < 4; i++) {
+        const result = await service.verifyOtp(
+          'bad@u-aizu.ac.jp',
+          'wrong',
+          OtpPurpose.registration,
+        );
+        expect(result).toBe(false);
+      }
+      expect(mockPrisma.otpCode.updateMany).not.toHaveBeenCalled();
+
+      // 5回目で無効化 updateMany が呼ばれる
+      const result5 = await service.verifyOtp(
+        'bad@u-aizu.ac.jp',
+        'wrong',
+        OtpPurpose.registration,
+      );
+      expect(result5).toBe(false);
+      expect(mockPrisma.otpCode.updateMany).toHaveBeenCalledWith({
+        where: {
+          email: 'bad@u-aizu.ac.jp',
+          purpose: OtpPurpose.registration,
+          consumed_at: null,
+        },
+        data: { consumed_at: expect.any(Date) },
+      });
     });
   });
 
