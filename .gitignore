@@ -20,20 +20,12 @@ dist/
 # Runtime / Database
 # ===================
 *.db
-gunicorn.ctl
-celerybeat-schedule
-celerybeat-schedule-shm
-celerybeat-schedule-wal
 
 # ===================
 # Docker runtime data
 # ===================
 postgres_data/
-minio_data/
-redis_data/
 **/postgres_data/
-**/minio_data/
-**/redis_data/
 
 # ===================
 # Environment files
