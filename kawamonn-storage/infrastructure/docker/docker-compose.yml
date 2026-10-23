@@ -15,6 +15,15 @@ services:
     networks:
       - kawamonn-network
 
+  frontend:
+    image: public.ecr.aws/nginx/nginx:alpine
+    container_name: kawamonn_storage_web
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../kawamonn-storage-frontend/dist:/usr/share/nginx/html:ro
+
 networks:
   kawamonn-network:
     driver: bridge
