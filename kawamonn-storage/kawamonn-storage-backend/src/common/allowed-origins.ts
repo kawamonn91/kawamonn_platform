@@ -1,11 +1,16 @@
+import { getPublicUrl } from './site-config';
+
 /**
  * CORS で許す画面の置き場所(HTTP の setupApp と端末の WebSocket で共通)。
- * 本番の画面は storage.kawamonn.com で、API は同じ場所(vite preview の転送)から呼ぶ。
- * localhost は手元で動かすとき(vite の開発サーバー 5173・preview 8080)。
- * (以前あった account.kawamonn.com・web.kawamonn.com は、もう使っていないので外した)
+ * PUBLIC_URL の設定があればそこから読み、localhost/127.0.0.1 の開発用アドレスも含める。
  */
-export const ALLOWED_ORIGINS = [
-  'https://storage.kawamonn.com',
-  'http://localhost:5173',
-  'http://localhost:8080',
-];
+export const ALLOWED_ORIGINS = Array.from(
+  new Set([
+    getPublicUrl(),
+    'https://storage.kawamonn.com',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:8080',
+  ]),
+);

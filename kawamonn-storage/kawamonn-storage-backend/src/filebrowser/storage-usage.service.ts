@@ -45,6 +45,7 @@ export class StorageUsageService implements OnApplicationBootstrap {
   async recalculateAll(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    const start = Date.now();
     try {
       const users = await this.prisma.user.findMany({
         where: { status: { not: 'deleted' } },
@@ -59,6 +60,8 @@ export class StorageUsageService implements OnApplicationBootstrap {
           );
         }
       }
+      const elapsed = Date.now() - start;
+      this.logger.log(`Recalculated usage for ${users.length} users in ${elapsed}ms`);
     } catch (e) {
       this.logger.warn(`Usage recalculation failed: ${e.message}`);
     } finally {
@@ -66,18 +69,9 @@ export class StorageUsageService implements OnApplicationBootstrap {
     }
   }
 
-  /** Web からの操作で増減した分を足す(次の測り直しで実際の値に戻る) */
+  /** Web からの操作で増減した分を足す(次の測り直しで実際の値に戻る)。0 を下回らないよう GREATEST で防ぐ */
   async adjust(userId: string, deltaBytes: number): Promise<void> {
     if (deltaBytes === 0) return;
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { used_bytes: { increment: BigInt(deltaBytes) } },
-    });
-    if (deltaBytes < 0 && this.prisma.user.updateMany) {
-      await this.prisma.user.updateMany({
-        where: { id: userId, used_bytes: { lt: 0n } },
-        data: { used_bytes: 0n },
-      });
-    }
+    await this.prisma.$executeRaw`UPDATE "User" SET used_bytes = GREATEST(used_bytes + ${BigInt(deltaBytes)}, 0) WHERE id = ${userId}`;
   }
 }

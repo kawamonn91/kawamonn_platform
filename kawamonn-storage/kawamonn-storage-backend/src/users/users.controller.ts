@@ -35,12 +35,13 @@ export class UsersController {
     if (!body.current_password) {
       throw new BadRequestException('現在のパスワードを入力してください');
     }
-    await this.usersService.changePassword(
+    const result = await this.usersService.changePassword(
       me.id,
       body.current_password,
       body.new_password,
+      me.role,
     );
-    return { status: '更新しました' };
+    return { status: '更新しました', token: result.token };
   }
 
   @Delete('me')

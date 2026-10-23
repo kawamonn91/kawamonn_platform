@@ -155,7 +155,7 @@ describe('FileBrowserService', () => {
       expect(fs.readFileSync(path.join(testRoot, 'f.txt'), 'utf8')).toBe('12');
     });
 
-    it('端末で作られたファイルを削除しても used_bytes が負にならないよう減少分を抑える', async () => {
+    it('端末で作られたファイルを削除した時も freed 分をそのまま adjust に渡し、DB側で下限0に抑える', async () => {
       fs.writeFileSync(path.join(testRoot, 'term.txt'), '12345');
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'u1',
@@ -164,7 +164,7 @@ describe('FileBrowserService', () => {
         quota_bytes: 100n,
       });
       await service.deleteItem(TEST_USERNAME, '/term.txt');
-      expect(mockUsage.adjust).toHaveBeenCalledWith('u1', -2);
+      expect(mockUsage.adjust).toHaveBeenCalledWith('u1', -5);
     });
   });
 

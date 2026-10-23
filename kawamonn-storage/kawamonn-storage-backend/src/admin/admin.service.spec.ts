@@ -50,6 +50,7 @@ describe('AdminService', () => {
       id: 'u1',
       account_name: 'alice',
       email: 'alice@u-aizu.ac.jp',
+      role: 'user',
       quota_bytes: BigInt(20) * GIB,
     });
   });
@@ -133,7 +134,7 @@ describe('AdminService', () => {
     await service.deleteUser('u1', me);
 
     expect(order).toEqual(['deprovision', 'delete', 'audit']);
-    expect(mockUsersService.deprovisionUser).toHaveBeenCalledWith('alice');
+    expect(mockUsersService.deprovisionUser).toHaveBeenCalledWith('alice', 'user');
   });
 
   it('容量は GiB で設定する(画面の 20 = DB の既定の 21474836480)', async () => {

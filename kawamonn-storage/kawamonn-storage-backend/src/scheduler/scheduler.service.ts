@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
+import { getPublicUrl } from '../common/site-config';
 
 /**
  * 毎日の定期処理
@@ -104,10 +105,10 @@ export class SchedulerService {
 
     if (template === 'final') {
       subject = 'FINAL NOTICE: Account Deletion Imminent';
-      text = `Hello ${user.account_name},\n\nThis is your FINAL NOTICE.\nYour account will expire and be DELETED in ${daysLeft} days on ${expiryDate}.\n\nPlease backup your data immediately.\n\nManagement Console: https://storage.kawamonn.com`;
+      text = `Hello ${user.account_name},\n\nThis is your FINAL NOTICE.\nYour account will expire and be DELETED in ${daysLeft} days on ${expiryDate}.\n\nPlease backup your data immediately.\n\nManagement Console: ${getPublicUrl()}`;
     } else {
       subject = `Kawamonn Account Expiry Reminder: ${daysLeft} days left`;
-      text = `Hello ${user.account_name},\n\nThis is a reminder that your account (@u-aizu.ac.jp) will expire on ${expiryDate}.\nYou have ${daysLeft} days remaining.\n\nPlease download your files before expiry.\nAfter expiry, your account and data will be deleted.\n\nManagement Console: https://storage.kawamonn.com`;
+      text = `Hello ${user.account_name},\n\nThis is a reminder that your account (@u-aizu.ac.jp) will expire on ${expiryDate}.\nYou have ${daysLeft} days remaining.\n\nPlease download your files before expiry.\nAfter expiry, your account and data will be deleted.\n\nManagement Console: ${getPublicUrl()}`;
     }
 
     let status = 'sent';
@@ -185,7 +186,7 @@ export class SchedulerService {
     for (const user of expiredUsers) {
       try {
         // Stop/remove SSH containers, revoke OS access, archive + delete storage
-        await this.usersService.deprovisionUser(user.account_name);
+        await this.usersService.deprovisionUser(user.account_name, user.role);
 
         // Update user status to deleted
         await this.prisma.user.update({

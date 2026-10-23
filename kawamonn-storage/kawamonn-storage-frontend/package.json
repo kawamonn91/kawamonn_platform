@@ -13,9 +13,9 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@capacitor/android": "^8.1.0",
-    "@capacitor/core": "^8.1.0",
-    "@capacitor/ios": "^8.1.0",
+    "@capacitor/android": "^8.3.5",
+    "@capacitor/core": "^8.3.5",
+    "@capacitor/ios": "^8.3.5",
     "@mantine/core": "^8.3.15",
     "@mantine/hooks": "^8.3.15",
     "@tabler/icons-react": "^3.37.1",

@@ -196,7 +196,10 @@ export class AdminService {
     const user = await this.findUserOrThrow(id);
 
     // DB の行より先に、端末のコンテナと利用者フォルダを片付ける(コンテナの記録をたどるため)
-    await this.usersService.deprovisionUser(user.account_name);
+    await this.usersService.deprovisionUser(
+      user.account_name,
+      user.role ?? 'user',
+    );
     await this.prisma.user.delete({ where: { id } });
     await this.audit(actor, 'admin_delete_user', id, {
       account_name: user.account_name,

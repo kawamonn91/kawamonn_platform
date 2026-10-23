@@ -20,6 +20,7 @@ import {
   normalizeEmail,
 } from '../common/account-name';
 import { hashPassword, needsRehash, verifyPassword } from '../common/password';
+import { getPublicUrl } from '../common/site-config';
 
 /** 管理者ログインの確認コードの送り先。どの管理者のログインでも運営者に送る(運営者の決定) */
 const ADMIN_OTP_TO = 'kawamonn91@gmail.com';
@@ -329,7 +330,7 @@ export class AuthService {
       },
     });
 
-    const resetLink = `https://storage.kawamonn.com/reset?token=${resetToken}`;
+    const resetLink = `${getPublicUrl()}/reset?token=${resetToken}`;
 
     try {
       await this.mail.send({

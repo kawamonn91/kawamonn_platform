@@ -12,6 +12,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth/jwt-auth.guard';
@@ -23,6 +24,8 @@ import { MkdirDto, RenameDto, WriteTextDto } from './dto/filebrowser.dto';
 @Controller('filebrowser')
 @UseGuards(JwtAuthGuard)
 export class FileBrowserController {
+  private readonly logger = new Logger(FileBrowserController.name);
+
   constructor(private readonly fileBrowserService: FileBrowserService) {}
 
   /** GET /api/v1/filebrowser/ls?path=/some/dir */
@@ -87,7 +90,12 @@ export class FileBrowserController {
       /\/+/g,
       '/',
     );
+    const start = Date.now();
     await this.fileBrowserService.writeFile(username, relPath, file.buffer);
+    const elapsed = Date.now() - start;
+    this.logger.log(
+      `Uploaded file ${relPath} (${file.size} bytes) in ${elapsed}ms for ${username}`,
+    );
     return { success: true, path: relPath };
   }
 

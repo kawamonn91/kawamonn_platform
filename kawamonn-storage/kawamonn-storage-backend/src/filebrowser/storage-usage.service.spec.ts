@@ -7,6 +7,7 @@ const SSH_BASE = process.env.SSH_BASE as string;
 describe('StorageUsageService', () => {
   const prisma = {
     user: { findMany: jest.fn(), update: jest.fn() },
+    $executeRaw: jest.fn(),
   };
   let service: StorageUsageService;
   const user = `usage${process.pid}`;
@@ -61,11 +62,8 @@ describe('StorageUsageService', () => {
 
   it('増減分を足す。0 なら DB に触れない', async () => {
     await service.adjust('u1', 0);
-    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
     await service.adjust('u1', -5);
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data: { used_bytes: { increment: -5n } },
-    });
+    expect(prisma.$executeRaw).toHaveBeenCalled();
   });
 });

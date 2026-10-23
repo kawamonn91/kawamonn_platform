@@ -43,14 +43,17 @@ describe('UsersController', () => {
   });
 
   it('パスワードの変更と、アカウントの削除はサービスに任せる', async () => {
-    await controller.updateMe(me, {
+    mockUsersService.changePassword.mockResolvedValue({ token: 'new-token' });
+    const res = await controller.updateMe(me, {
       current_password: 'old',
       new_password: 'new password!',
     });
+    expect(res).toEqual({ status: '更新しました', token: 'new-token' });
     expect(mockUsersService.changePassword).toHaveBeenCalledWith(
       'u1',
       'old',
       'new password!',
+      'user',
     );
     await controller.deleteMe(me);
     expect(mockUsersService.deleteAccount).toHaveBeenCalledWith('u1');

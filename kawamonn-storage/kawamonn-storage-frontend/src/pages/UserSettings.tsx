@@ -10,7 +10,7 @@ import { useAuth } from '../AuthContext';
 
 export default function UserSettings() {
     const navigate = useNavigate();
-    const { logout, userRole } = useAuth();
+    const { logout, userRole, login } = useAuth();
     const [accountName, setAccountName] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -40,9 +40,12 @@ export default function UserSettings() {
             return;
         }
         try {
-            await api.put('/api/v1/users/me',
+            const res = await api.put('/api/v1/users/me',
                 { current_password: currentPassword, new_password: newPassword }
             );
+            if (res.data?.token) {
+                login(res.data.token);
+            }
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');

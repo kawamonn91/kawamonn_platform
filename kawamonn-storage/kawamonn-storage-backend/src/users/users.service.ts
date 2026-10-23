@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { User, Prisma } from '@prisma/client';
 import { execFile } from 'child_process';
@@ -22,13 +23,17 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private sshService: SshService,
+    private jwtService: JwtService,
   ) {}
 
   /**
    * 利用者の端末のコンテナを消し、利用者フォルダを保管してから消す(DELETE_USER_SCRIPT)。
    * コンテナの記録(SshContainer)をたどって消すので、User を消す前に呼ぶこと。
    */
-  async deprovisionUser(account_name: string): Promise<void> {
+  async deprovisionUser(
+    account_name: string,
+    role: string = 'user',
+  ): Promise<void> {
     try {
       await this.sshService.removeUserContainers(account_name);
     } catch (e) {
@@ -42,6 +47,7 @@ export class UsersService {
         DELETE_USER_SCRIPT,
         account_name,
         'archive',
+        role,
       ]);
     } catch (e) {
       this.logger.error(
@@ -70,31 +76,40 @@ export class UsersService {
     });
   }
 
-  /** 今のパスワードを確かめてから、新しいパスワードにする */
+  /** 今のパスワードを確かめてから、新しいパスワードにする。失効を防ぐため新しいトークンを発行して返す */
   async changePassword(
     userId: string,
     currentPassword: string,
     newPassword: string,
-  ): Promise<void> {
+    role: string = 'user',
+  ): Promise<{ token: string }> {
     const user = await this.findOne({ id: userId });
     if (!user) throw new BadRequestException('User not found');
     if (!(await verifyPassword(user.password_hash, currentPassword))) {
       throw new BadRequestException('現在のパスワードが正しくありません');
     }
+    const now = new Date();
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         password_hash: await hashPassword(newPassword),
-        password_last_set_at: new Date(),
+        password_last_set_at: now,
       },
     });
+
+    const payload = {
+      account_name: user.account_name,
+      sub: user.id,
+      role: role === 'admin' ? 'admin' : 'user',
+    };
+    return { token: this.jwtService.sign(payload) };
   }
 
   /** 利用者が自分のアカウントを消す(端末のコンテナ、利用者フォルダは保管してから消し、最後に DB の行) */
   async deleteAccount(userId: string): Promise<void> {
     const user = await this.findOne({ id: userId });
     if (!user) throw new BadRequestException('User not found');
-    await this.deprovisionUser(user.account_name);
+    await this.deprovisionUser(user.account_name, user.role);
     await this.prisma.user.delete({ where: { id: userId } });
   }
 
