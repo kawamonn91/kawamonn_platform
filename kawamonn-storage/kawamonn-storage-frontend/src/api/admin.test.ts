@@ -24,6 +24,9 @@ vi.mock('./client', () => ({
     },
 }));
 
+// vi.mock で差し替えた api の各メソッド(モックとして扱うための型)
+const mockedApi = api as unknown as Record<'get' | 'post' | 'put' | 'delete', ReturnType<typeof vi.fn>>;
+
 describe('admin API', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -42,7 +45,7 @@ describe('admin API', () => {
     });
 
     it('calls fetchAdminUsers with correct params', async () => {
-        (api.get as any).mockResolvedValue({
+        mockedApi.get.mockResolvedValue({
             data: { items: [{ id: '1', account_name: 'test' }], total_count: 1 },
         });
 
@@ -55,8 +58,8 @@ describe('admin API', () => {
     });
 
     it('calls updateAdminUserEmail and updateAdminUserQuota', async () => {
-        (api.put as any).mockResolvedValue({ data: { success: true } });
-        (api.post as any).mockResolvedValue({ data: { success: true } });
+        mockedApi.put.mockResolvedValue({ data: { success: true } });
+        mockedApi.post.mockResolvedValue({ data: { success: true } });
 
         await updateAdminUserEmail('u1', 'new@example.com');
         expect(api.put).toHaveBeenCalledWith('/api/v1/admin/users/u1', { email: 'new@example.com' });
@@ -66,9 +69,9 @@ describe('admin API', () => {
     });
 
     it('calls fetchAdminUserDetail, resetPassword, and deleteAdminUser', async () => {
-        (api.get as any).mockResolvedValue({ data: { id: 'u1', account_name: 'alice' } });
-        (api.post as any).mockResolvedValue({ data: { temporary_password: 'pass' } });
-        (api.delete as any).mockResolvedValue({ data: { success: true } });
+        mockedApi.get.mockResolvedValue({ data: { id: 'u1', account_name: 'alice' } });
+        mockedApi.post.mockResolvedValue({ data: { temporary_password: 'pass' } });
+        mockedApi.delete.mockResolvedValue({ data: { success: true } });
 
         await fetchAdminUserDetail('u1');
         expect(api.get).toHaveBeenCalledWith('/api/v1/admin/users/u1');
@@ -81,7 +84,7 @@ describe('admin API', () => {
     });
 
     it('calls createAdminUser and sendAdminBroadcast', async () => {
-        (api.post as any).mockResolvedValue({ data: { id: 'new-u' } });
+        mockedApi.post.mockResolvedValue({ data: { id: 'new-u' } });
 
         await createAdminUser({ email: 'new@example.com', quota_gb: 20 });
         expect(api.post).toHaveBeenCalledWith('/api/v1/admin/users', {
