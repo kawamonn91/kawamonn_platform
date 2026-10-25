@@ -24,11 +24,27 @@ const childProcess = require('child_process');
 // try/catch — against a real SMTP server this is desired end-to-end behavior,
 // but .env.test's SMTP_HOST points at a throwaway address nothing listens on,
 // so this must be mocked or every send-otp call would fail with ECONNREFUSED.
+// (jest.mock は import より先に実行されるので、mockSendMail は呼ばれた時点で参照する)
+const mockSendMail = jest.fn().mockResolvedValue(undefined);
 jest.mock('nodemailer', () => ({
-  createTransport: jest
-    .fn()
-    .mockReturnValue({ sendMail: jest.fn().mockResolvedValue(undefined) }),
+  createTransport: jest.fn().mockReturnValue({
+    sendMail: (...args: unknown[]) => mockSendMail(...args),
+  }),
 }));
+
+/**
+ * 送ったメールの本文から確認コード(6 桁)を取り出す。DB にはコードの HMAC しか残らないので、
+ * 利用者と同じくメールで受け取ったコードを使う
+ */
+function lastMailedOtp(to: string): string {
+  const mail = [...mockSendMail.mock.calls]
+    .map(([m]) => m as { to?: string; text?: string })
+    .reverse()
+    .find((m) => m.to === to);
+  const code = mail?.text?.match(/\b(\d{6})\b/)?.[1];
+  if (!code) throw new Error(`${to} 宛ての確認コードのメールが無い`);
+  return code;
+}
 
 /**
  * Deliberately composes a SMALL test module (Auth + Prisma only) instead of
@@ -82,6 +98,9 @@ describe('Auth (e2e)', () => {
         orderBy: { created_at: 'desc' },
       });
       expect(otp).not.toBeNull();
+      // DB にはコードそのものを残さない
+      const code = lastMailedOtp(email);
+      expect(otp!.code_hash).not.toContain(code);
 
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/register')
@@ -89,7 +108,7 @@ describe('Auth (e2e)', () => {
           email,
           password: 'a valid password!',
           display_name: `e2euser${Date.now()}`,
-          otp_code: otp!.code,
+          otp_code: code,
         })
         .expect(201);
 
@@ -109,18 +128,13 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/send-otp')
         .send({ email })
         .expect(200);
-      const otp = await prisma.otpCode.findFirst({
-        where: { email },
-        orderBy: { created_at: 'desc' },
-      });
-
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/register')
         .send({
           email,
           password: 'a valid password!',
           display_name: 'admin',
-          otp_code: otp!.code,
+          otp_code: lastMailedOtp(email),
         });
 
       expect(res.status).toBe(409);
