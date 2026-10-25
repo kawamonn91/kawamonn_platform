@@ -10,3 +10,6 @@ import * as path from 'path';
 process.env.SSH_BASE = fs.mkdtempSync(
   path.join(os.tmpdir(), 'kawamonn-ssh-base-'),
 );
+
+// 確認コードの HMAC などが JWT_SECRET を使う。ユニットテストでは使い捨ての値を入れておく
+process.env.JWT_SECRET ??= 'unit-test-only-throwaway-secret-0000';
