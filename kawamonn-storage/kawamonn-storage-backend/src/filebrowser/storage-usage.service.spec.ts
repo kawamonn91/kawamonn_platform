@@ -66,4 +66,13 @@ describe('StorageUsageService', () => {
     await service.adjust('u1', -5);
     expect(prisma.$executeRaw).toHaveBeenCalled();
   });
+
+  it('id は uuid として比べる(文字列のままだと uuid = text で失敗する)', async () => {
+    await service.adjust('u1', 5);
+    const [strings, delta, id] = (prisma.$executeRaw as jest.Mock).mock
+      .calls[0];
+    expect((strings as string[]).join('?')).toMatch(/WHERE id = \?::uuid/);
+    expect(delta).toBe(5n);
+    expect(id).toBe('u1');
+  });
 });

@@ -61,7 +61,9 @@ export class StorageUsageService implements OnApplicationBootstrap {
         }
       }
       const elapsed = Date.now() - start;
-      this.logger.log(`Recalculated usage for ${users.length} users in ${elapsed}ms`);
+      this.logger.log(
+        `Recalculated usage for ${users.length} users in ${elapsed}ms`,
+      );
     } catch (e) {
       this.logger.warn(`Usage recalculation failed: ${e.message}`);
     } finally {
@@ -69,9 +71,14 @@ export class StorageUsageService implements OnApplicationBootstrap {
     }
   }
 
-  /** Web からの操作で増減した分を足す(次の測り直しで実際の値に戻る)。0 を下回らないよう GREATEST で防ぐ */
+  /**
+   * Web からの操作で増減した分を足す(次の測り直しで実際の値に戻る)。0 を下回らないよう GREATEST で防ぐ。
+   * Prisma は文字列の値を text として渡すので、uuid の列と比べるには ::uuid が要る
+   * (無いと「operator does not exist: uuid = text」で失敗し、アップロード・削除が 500 になる)
+   */
   async adjust(userId: string, deltaBytes: number): Promise<void> {
     if (deltaBytes === 0) return;
-    await this.prisma.$executeRaw`UPDATE "User" SET used_bytes = GREATEST(used_bytes + ${BigInt(deltaBytes)}, 0) WHERE id = ${userId}`;
+    await this.prisma
+      .$executeRaw`UPDATE "User" SET used_bytes = GREATEST(used_bytes + ${BigInt(deltaBytes)}, 0) WHERE id = ${userId}::uuid`;
   }
 }
