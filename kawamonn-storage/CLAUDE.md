@@ -24,8 +24,9 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   dockerode、Passport/JWT、class-validator。MinIO・Redis/BullMQ は 2026-10 に廃止した(ファイルは HDD の利用者フォルダだけ)
 - **Frontend**: React 19 + Vite 5、Mantine UI、xterm.js、socket.io-client、axios、Capacitor(Android)
 - **Node.js**: `24.21.0`(2026年9月に `18.20.8` からアップグレード済み。18は既にEOLだった)
-- **テスト**: Jest(backend: unit 26 suites/186 tests + e2e 4 suites/22 tests)、
-  Vitest(frontend: 5 files/31 tests)
+- **テスト**: Jest(backend: unit 29 suites/208 tests + e2e 4 suites/22 tests)、
+  Vitest(frontend: 7 files/42 tests)。e2e は本物の Postgres(`docker-compose.test.yml`)で、DB は
+  `prisma migrate deploy`(本番と同じマイグレーション)で作る
 - **CI**: GitHub Actions(`.github/workflows/ci.yml` — git root(`/home/pi/hdd/ssh/`)にあり、
   `kawamonn-storage/` 配下ではない)。`kawamonn-storage/` 以下が変わる push/PR 毎に backend・frontend・infra の
   3ジョブが走る。lint は backend・frontend とも実gate(0件維持)で、backend は `npm run lint:check`(自動修正なし)で判定する。
@@ -34,8 +35,8 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - **死活監視**: Pi 本体や回線の停止は、Cloudflare の通知機能(トンネルの状態の変化をメールで通知)で検知する。
   **GitHub Actions から公開 URL を取得する方式は使えない**(Cloudflare のボット対策がデータセンターの IP を 403 で
   遮断し、Pi まで届かない。2026-10-12 に確認)。そのため一度作った uptime.yml は削除した
-- **デプロイ**: PM2(`kawamonn-storage/ecosystem.config.js`)、Docker Compose(Postgres/cloudflared)、
-  Cloudflare Tunnel(ポート開放なし)
+- **デプロイ**: PM2(backend だけ。`kawamonn-storage/ecosystem.config.js`)、Docker Compose(Postgres と画面の nginx)、
+  Cloudflare Tunnel(ポート開放なし。トンネルのコネクタは 2026-10 にこのリポジトリの compose の外へ移した)
 
 ## 3. 確定済みの方針(蒸し返さない)
 
@@ -81,16 +82,16 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - **GitHub Actionsの `$GITHUB_ENV` はシェルのクォート除去を行わない。** `.env.test` の値はダブルクォートで
   囲まない(`DATABASE_URL=postgresql://...` のように生の値のまま)
 - **MinIO と Redis(BullMQ)は 2026-10-21 に廃止した。** ファイルは HDD の利用者フォルダだけに置き、ジョブのキューも無い。
-  本番の compose は Postgres と cloudflared だけ。テスト用の compose(e2e・CI)は Postgres だけ
-- **ヘルスチェック**(`kawamonn-storage/monitoring/healthcheck.sh`、cron 5分毎)は、
-  2026年10月の修正で「公開URLへの疎通確認(`site_ok`)だけが失敗した場合」も、アプリの再起動が
-  必要な場合と同じ最大40秒のリトライ待機をしてから失敗確定するようになった。
-  それ以前は再起動対象が無いケースだと待機が完全にスキップされ、一時的なCloudflare Tunnelの
-  瞬断でも即座にアラートが飛んでいた
+  本番の compose は Postgres と画面の nginx(`kawamonn_storage_web`)だけ。テスト用の compose(e2e・CI)は Postgres だけ
+- **ヘルスチェック**(`kawamonn-storage/monitoring/healthcheck.sh`)は Storage だけを単体で監視するときのもの。
+  本番では 2026-10 から、ほかのサービスとまとめた監視(リポジトリの外)が代わりに動いていて、通知のメールには
+  このリポジトリの `monitoring/mailer.js` を使っている(mailer.js は backend の `node_modules` の nodemailer を読む)。
+  単体のスクリプトは「公開URLへの疎通確認(`site_ok`)だけが失敗した場合」も最大40秒待ってから失敗を確定する
+  (一時的な Cloudflare Tunnel の瞬断で即座にアラートを出さないため)
 - **Express 5(Nest v11が内部で使用)はpath-to-regexpの構文が変わっている。** 旧来の
   `'/api/(.*)'` のような無名正規表現グループは使えず、`'/api/{*splat}'` のように書く。
   (以前これを使っていた `ServeStaticModule` は、本番では使われていなかったので 2026-10-21 に削除した。
-  画面は PM2 の `kawamonn-frontend`(vite preview)が配信し、backend には `/api` と `/socket.io` だけが届く)
+  画面は nginx のコンテナが配信し、backend には `/api` と `/socket.io` だけが届く)
 - 構成の説明は、このファイルと技術解説の Artifact(https://claude.ai/artifact/Sx4Bvy8ZU6qfyYBM3EAun3)を参照する。
   以前あった `プロジェクト説明資料.md`・`運用ガイド.md`(git root)と `docs/`(DB の図・SQL・API の説明)は、
   Flask 時代や MinIO・`/files` API のころのままで不正確だったので削除した
@@ -109,18 +110,33 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
 - **typescript-eslint v8 で `no-var-requires` は `no-require-imports` に置き換わった。** 意図的な遅延 `require()` を
   lint から外すときは `// eslint-disable-next-line @typescript-eslint/no-require-imports` と書く
   (古いルール名のままだと無効化が効かない)
+- **Prisma の `$executeRaw`・`$queryRaw` は、文字列の値を text として渡す。** uuid の列と比べるときは `${id}::uuid` と書く
+  (書かないと「operator does not exist: uuid = text」。2026-10-24 から使用量の更新でこれが起き、Web のアップロード・
+  削除が 500 になっていた。ユニットテストは Prisma をモックしているので気づけず、e2e で分かる)
+- **DB の変更は Prisma のマイグレーション(`prisma/migrations`)で行う。** `schema.prisma` を変えたら
+  `npx prisma migrate dev --name <名前>` でマイグレーションを作り、一緒にコミットする。`0_init` は 2026-10 に本番のスキーマから
+  作った基準で、本番には「適用済み」として記録してある(`prisma migrate resolve --applied 0_init`)。本番への反映は
+  `prisma migrate deploy`。以前の `prisma db push` は履歴が残らないので使わない
+- **確認コード(OTP)は DB にコードそのものを保存しない。** `src/common/otp.util.ts` の `hashOtpCode`(JWT_SECRET を鍵にした
+  HMAC-SHA256)で保存し、用途(`registration`・`admin_login`)で分け、5回間違えたら無効にする。e2e は送ったメールの本文から
+  コードを取り出して使う(DB からは読めない)
 - **`dotenv` は本番の起動(`node -r dotenv/config dist/src/main`)に必要なので `dependencies` に置く。**
   アプリ自体は `.env` を読まないので、`devDependencies` に戻すと本番向けのインストールで起動しなくなる
 
 ## 6. 本番環境の構成
 
 - ホスト名: `raspi1`(Raspberry Pi 5、aarch64、自宅・単一台)
-- PM2: `kawamonn-backend`(NestJS、`npm run start:prod`、:3000)、
-  `kawamonn-frontend`(ビルド済みの dist を `vite preview` で配信、:8080。`/api` と `/socket.io` は
-  vite.config の proxy で backend へ転送)。frontend を更新したら `npm run build` してから起動し直す
+- PM2: `kawamonn-backend`(NestJS、`npm run start:prod`、:3000)だけ
+- 画面: compose の `frontend`(コンテナ `kawamonn_storage_web`、nginx、`infrastructure/docker/nginx/nginx.conf`)が
+  ビルド済みの `kawamonn-storage-frontend/dist` を読み取り専用でつないで :8080 で配信し、`/api` と `/socket.io`(WebSocket)を
+  backend へ転送する(2026-10 まで PM2 の `kawamonn-frontend` が vite preview で配信していた)。**host ネットワークで動かす**
+  (ブリッジにすると backend から見た接続元がコンテナのアドレスになり、`ClientIpThrottlerGuard` が `CF-Connecting-IP` を
+  信じなくなって、全員で1つの回数制限を分け合う)。frontend を更新したら `npm run build` するだけでよい(nginx は再起動
+  しなくてよい。`index.html` は `no-cache`、名前にハッシュの付く `assets/` は長くキャッシュさせる)。`dist` は
+  `chmod -R a+rX` してから配信する(コンテナの nginx は別の利用者として読む)
 - Docker: `kawamonn_db`(Postgres 15)は **ループバック(`127.0.0.1` と `::1`)だけで公開**し、LAN からは届かない。
-  ほかに `kawamonn_cloudflared`、ユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)。テーブルは Prisma が作る
-  (`prisma db push`。compose で初回作成用の SQL は読ませていない)
+  ほかにユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)。テーブルは Prisma のマイグレーションで作る
+  (compose で初回作成用の SQL は読ませていない)
 - **利用者のファイルは HDD の利用者フォルダ(一般の利用者は `/home/pi/hdd/ssh/users/<名前>`、管理者は
   `/home/pi/hdd/ssh/<名前>`)だけに置く**(2026-10-21 に一本化)。Web のストレージ画面も SSH 画面のファイルブラウザも
   `/api/v1/filebrowser`(パス指定)で同じフォルダを直接読み書きし、端末(SSH コンテナ)はそのフォルダをマウントしている。
@@ -163,10 +179,11 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   `POST /admin/users/:id/quota`(`quota_gb`)、`PUT /admin/users/:id` はメールアドレスだけ
 - アプリ全体の設定(helmet・接頭辞・CORS・本文の上限・検証)は `src/app-setup.ts` の `setupApp()`。本番(`main.ts`)と
   e2e テストで同じものを使う。JSON の本文は 10MB まで(Web のエディタの保存)、アップロードと読み込みは 100MB まで
-- Cloudflare Tunnel: `kawamonn_cloudflared` はトークン方式で動いていて、ルートは Cloudflare ダッシュボードで
-  管理している(`storage.kawamonn.com` → frontend)。リポジトリにトンネルの設定ファイルは置かない
+- Cloudflare Tunnel: トンネルのコネクタ(cloudflared)はトークン方式で動いていて、2026-10 にこのリポジトリの compose から
+  外へ移した(同じトンネルをほかのサービスも使うため)。ルートは Cloudflare ダッシュボードで管理している
+  (`storage.kawamonn.com` → 画面の nginx)。リポジトリにトンネルの設定ファイルやトークンは置かない
   (以前あった `infrastructure/cloudflared/config.yml` は稼働中のトンネルでは読まれていなかったので削除した)
-- **API の回数制限**(`@nestjs/throttler`)は、接続元ごとに1分300回(`app.module.ts`)。本番の通信は Cloudflare → vite preview →
+- **API の回数制限**(`@nestjs/throttler`)は、接続元ごとに1分300回(`app.module.ts`)。本番の通信は Cloudflare → 画面の nginx →
   backend と届き、backend からは全員が 127.0.0.1 に見えるので、Pi の中から届いたものに限り Cloudflare の `CF-Connecting-IP` で
   数える(`ClientIpThrottlerGuard`)。認証の API は各ルートの `@Throttle({ default: { limit: N } })` で厳しくしている
   (登録5・ログイン10・確認コードの送信3・管理者ログイン5・管理者の確認コード5・再設定の申請3・再設定5・`PUT /users/me` 10)。
@@ -184,8 +201,8 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   `entrypoint.sh` が所有者を付け直したあと、`BACKEND_UID`(SshService が渡す backend の UID)と UID 70000 に
   `rwX` の ACL と default ACL を付ける(イメージに `acl` が要る)。これが無いと、端末を一度開いた利用者のファイルが
   Web から見えなくなる。利用者の削除は `scripts/delete_user.sh`(sudo、利用者フォルダの保管と削除だけ)
-- モニタリング: `kawamonn-storage/monitoring/healthcheck.sh` が5分毎にcron実行。障害時はPM2再起動を
-  試行し、最大1時間に1回まで運営者にメール通知(`monitoring/mailer.js`)。Pi 本体や回線が
-  止まった場合は、Cloudflare の通知機能(トンネルの状態)でメールが届く
+- モニタリング: 5分ごとの監視(本番ではリポジトリの外の、ほかのサービスとまとめたもの)が、障害時に再起動を試し、
+  最大1時間に1回まで運営者にメールで知らせる(`monitoring/mailer.js`)。Pi 本体や回線が止まった場合は、
+  Cloudflare の通知機能(トンネルの状態)でメールが届く
 - 未実装・既知のギャップ(ユーザーに正直に伝えること): ファイル共有機能(未実装。DB のテーブルも削除済み)、
   TOTP二段階認証(未実装。依存パッケージも削除済み)、Web からの 100MB を超えるファイルのダウンロード

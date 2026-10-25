@@ -1,8 +1,10 @@
 #!/bin/bash
-# Health check for storage.kawamonn.com: verifies the site responds and that
-# the backend/frontend pm2 processes are genuinely alive (not zombies).
-# On failure: restart the broken pm2 app once, re-check, and email only if
+# Health check for storage.kawamonn.com: verifies the site responds, that the
+# backend pm2 process is genuinely alive (not a zombie) and that the frontend
+# nginx container (kawamonn_storage_web, infrastructure/docker) serves the page.
+# On failure: restart the broken part once, re-check, and email only if
 # it's still broken after that (at most once per hour while down).
+# Storage だけを単体で監視するときのスクリプト(本番では、ほかのサービスとまとめた監視がこの役を兼ねている)
 
 set -u
 
@@ -14,6 +16,8 @@ URL="https://storage.kawamonn.com"
 # Any guarded endpoint works: 401 without a token proves Nest is up and routing.
 # A crash-looping backend (pm2 briefly says "online", then dies) fails this.
 API_URL="${API_URL:-http://localhost:3000/api/v1/users/me}"
+FRONTEND_CONTAINER="kawamonn_storage_web"
+FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1:8080/}"
 NODE_BIN="$(command -v node)"
 
 mkdir -p "$STATE_DIR"
@@ -53,8 +57,16 @@ backend_healthy() {
   is_app_alive "kawamonn-backend" && api_ok
 }
 
+# 画面は nginx のコンテナが配信する(以前の PM2 の frontend・vite preview は廃止)
+frontend_healthy() {
+  local code
+  [[ "$(docker inspect -f '{{.State.Running}}' "$FRONTEND_CONTAINER" 2>/dev/null)" == "true" ]] || return 1
+  code=$(curl -s -o /dev/null -m 5 -w "%{http_code}" "$FRONTEND_URL")
+  [[ "$code" == "200" ]]
+}
+
 check_all() {
-  site_ok && backend_healthy && is_app_alive "kawamonn-frontend"
+  site_ok && backend_healthy && frontend_healthy
 }
 
 send_alert() {
@@ -109,14 +121,16 @@ fi
 log "Health check FAILED — attempting recovery"
 FAILED_APPS=""
 backend_healthy || FAILED_APPS="$FAILED_APPS kawamonn-backend"
-is_app_alive "kawamonn-frontend" || FAILED_APPS="$FAILED_APPS kawamonn-frontend"
+frontend_healthy || FAILED_APPS="$FAILED_APPS $FRONTEND_CONTAINER"
 
-if [[ -n "$FAILED_APPS" ]]; then
-  for app in $FAILED_APPS; do
-    log "Restarting $app"
+for app in $FAILED_APPS; do
+  log "Restarting $app"
+  if [[ "$app" == "$FRONTEND_CONTAINER" ]]; then
+    docker restart "$FRONTEND_CONTAINER" >/dev/null 2>&1
+  else
     pm2 restart "$app" >/dev/null 2>&1
-  done
-fi
+  fi
+done
 
 # Poll for recovery either way, even when nothing needed restarting: Nest
 # needs ~10s to boot after a restart, and a bare site_ok() failure (pm2/API
@@ -137,28 +151,28 @@ if check_all; then
 fi
 
 log "Still failing after recovery attempt — sending alert"
-BODY="storage.kawamonn.com health check failed and did not recover after a pm2 restart.
+BODY="storage.kawamonn.com health check failed and did not recover after a restart.
 
 Time: $(date '+%Y-%m-%d %H:%M:%S %Z')
 Site check: $(site_ok && echo OK || echo FAIL) ($URL)
 kawamonn-backend (pm2): $(is_app_alive kawamonn-backend && echo OK || echo DOWN)
 kawamonn-backend (API, $API_URL): $(api_ok && echo OK || echo DOWN)
-kawamonn-frontend: $(is_app_alive kawamonn-frontend && echo OK || echo DOWN)
+frontend ($FRONTEND_CONTAINER, $FRONTEND_URL): $(frontend_healthy && echo OK || echo DOWN)
 
 Restart was attempted for:$FAILED_APPS
 
 Recent kawamonn-backend errors (log末尾から抽出。古い行を含む場合あり):
 $(collect_diagnostics kawamonn-backend)
 
-Recent kawamonn-frontend errors:
-$(collect_diagnostics kawamonn-frontend)
+Recent $FRONTEND_CONTAINER (nginx) log lines:
+$(docker logs --tail 6 "$FRONTEND_CONTAINER" 2>&1 | cut -c1-300)
 
 Recent kawamonn_db (Postgres) FATAL lines:
 $(collect_db_diagnostics)
 
 Check logs:
   pm2 logs kawamonn-backend --err --lines 50
-  pm2 logs kawamonn-frontend --err --lines 50
+  docker logs $FRONTEND_CONTAINER --tail 50
   docker logs kawamonn_db --tail 50
 "
 send_alert "[ALERT] storage.kawamonn.com is DOWN" "$BODY"
