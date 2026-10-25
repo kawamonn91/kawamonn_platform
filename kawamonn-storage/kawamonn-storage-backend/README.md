@@ -32,7 +32,9 @@ e2e テストは本物の PostgreSQL と、一時フォルダ上の利用者フ�
 
 ```bash
 docker compose -f docker-compose.test.yml up -d
-npx prisma db push --skip-generate   # .env.test の DATABASE_URL に対して実行
+docker compose -f docker-compose.test.yml exec -T test-db psql -U test -d kawamonn_test -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
+set -a && . ./.env.test && set +a      # .env.test の DATABASE_URL などを読み込む
+npx prisma migrate deploy              # 本番と同じく、prisma/migrations から DB を作る
 npm run test:e2e
 docker compose -f docker-compose.test.yml down
 ```

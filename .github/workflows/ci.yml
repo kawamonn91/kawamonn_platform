@@ -69,10 +69,13 @@ jobs:
       - name: Load test environment variables
         run: grep -v '^#' .env.test >> "$GITHUB_ENV"
 
-      - name: Push Prisma schema to the test database
+      # 本番の反映(deploy-storage.sh)と同じく、マイグレーションのファイルから DB を作る
+      # (schema.prisma とマイグレーションの食い違いも、ここと e2e で見つかる)
+      - name: Apply Prisma migrations to the test database
         run: |
           npx prisma generate
-          npx prisma db push --skip-generate
+          npx prisma migrate deploy
+          npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
 
       - name: Run unit tests
         run: npm test
