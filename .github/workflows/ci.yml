@@ -27,10 +27,10 @@ jobs:
       run:
         working-directory: kawamonn-storage/kawamonn-storage-backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # 本番(PM2)と同じ Node.js のバージョンでテストする
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
           node-version: '24.21.0'
           cache: npm
@@ -97,10 +97,10 @@ jobs:
       run:
         working-directory: kawamonn-storage/kawamonn-storage-frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # 本番で vite preview を動かしている Node.js と同じバージョン
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
           node-version: '24.21.0'
           cache: npm
@@ -125,7 +125,7 @@ jobs:
       run:
         working-directory: kawamonn-storage
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ヘルスチェック(cron)・ユーザー作成/削除スクリプトなど、本番で root や cron から
       # 実行されるシェルスクリプトの誤りを、warning 以上で検出する
@@ -144,3 +144,20 @@ jobs:
       - name: Validate docker-compose.test.yml
         working-directory: kawamonn-storage/kawamonn-storage-backend
         run: docker compose -f docker-compose.test.yml config --quiet
+
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    needs: [backend, frontend, infra]
+    if: always()
+    steps:
+      - name: Check results of all jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then
+              exit 1
+            fi
+          done

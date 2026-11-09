@@ -152,37 +152,41 @@ export default function StorageDashboard() {
 
     const sidebarJsx = (
         <Stack justify="space-between" h="100%">
-            <Stack gap="xs">
+            <Stack gap={6}>
                 <Button
-                    variant="light"
+                    variant="default"
                     leftSection={<IconUpload size={16} />}
                     fullWidth
+                    justify="flex-start"
                     onClick={() => fileInputRef.current?.click()}
                 >
                     ファイルをアップロード
                 </Button>
                 <Button
-                    variant="light"
+                    variant="default"
                     leftSection={<IconFolderPlus size={16} />}
                     fullWidth
+                    justify="flex-start"
                     onClick={() => folderInputRef.current?.click()}
                 >
                     フォルダをアップロード
                 </Button>
                 <Button
-                    variant="light"
-                    color="teal"
+                    variant="subtle"
+                    color="gray"
                     leftSection={<IconPlus size={16} />}
                     fullWidth
+                    justify="flex-start"
                     onClick={() => { openFolderModal(); closeDrawer(); }}
                 >
                     新規フォルダを作成
                 </Button>
                 <Button
-                    variant="light"
-                    color="cyan"
+                    variant="subtle"
+                    color="gray"
                     leftSection={<IconFilePlus size={16} />}
                     fullWidth
+                    justify="flex-start"
                     onClick={() => { openFileModal(); closeDrawer(); }}
                 >
                     新規ファイルを作成
@@ -190,6 +194,7 @@ export default function StorageDashboard() {
                 <Divider my="xs" />
                 <Button
                     variant={currentPath === '/' ? 'light' : 'subtle'}
+                    color="gray"
                     leftSection={<IconFolder size={16} />}
                     fullWidth
                     justify="flex-start"
@@ -199,7 +204,7 @@ export default function StorageDashboard() {
                 </Button>
                 <Button
                     variant="subtle"
-                    color="cyan"
+                    color="gray"
                     leftSection={<IconTerminal2 size={16} />}
                     fullWidth
                     justify="flex-start"
@@ -210,13 +215,13 @@ export default function StorageDashboard() {
             </Stack>
             {usage && usage.quota > 0 && (
                 <Stack gap={4}>
-                    <Text size="xs" c="dimmed">ストレージの使用量</Text>
+                    <Text size="xs" c="dimmed">ストレージ使用量</Text>
                     <Progress
                         value={Math.min((usage.used / usage.quota) * 100, 100)}
-                        color={usage.used / usage.quota > 0.9 ? 'red' : 'blue'}
-                        size="sm"
+                        color={usage.used / usage.quota > 0.9 ? 'red' : 'gray.4'}
+                        size="xs"
                     />
-                    <Text size="xs" c="dimmed">
+                    <Text size="xs" c="dimmed" ff="monospace">
                         {formatBytes(usage.used)} / {formatBytes(usage.quota)}
                     </Text>
                 </Stack>
@@ -243,12 +248,12 @@ export default function StorageDashboard() {
                 onChange={handleFolderUpload}
             />
 
-            <Drawer opened={drawerOpened} onClose={closeDrawer} title="UoA Online" size="xs">
+            <Drawer opened={drawerOpened} onClose={closeDrawer} title="Kawamonn Storage" size="xs">
                 {sidebarJsx}
             </Drawer>
 
             <AppShell
-                header={{ height: 60 }}
+                header={{ height: 56 }}
                 navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: true } }}
                 padding="md"
             >
@@ -261,27 +266,28 @@ export default function StorageDashboard() {
                                 hiddenFrom="sm"
                                 size="sm"
                             />
-                            <Title order={3}>UoA Online</Title>
+                            <Title order={4} fw={700} style={{ letterSpacing: '-0.02em' }}>Kawamonn Storage</Title>
+                            <Text size="xs" c="dimmed" ff="monospace" visibleFrom="sm">storage.kawamonn.com</Text>
                         </Group>
-                        <Group gap="sm">
+                        <Group gap="xs">
                             {userRole === 'admin' && (
-                                <Button variant="subtle" size="sm" onClick={() => navigate('/admin')}>Admin</Button>
+                                <Button variant="subtle" color="gray" size="xs" onClick={() => navigate('/admin')}>管理者画面</Button>
                             )}
                             <Button
                                 variant="subtle"
-                                size="sm"
-                                leftSection={<IconSettings size={16} />}
+                                color="gray"
+                                size="xs"
+                                leftSection={<IconSettings size={15} />}
                                 onClick={() => navigate('/settings')}
                             >
                                 設定
                             </Button>
                             <Button
-                                variant="light"
-                                color="red"
-                                size="sm"
+                                variant="default"
+                                size="xs"
                                 onClick={() => { logout(); navigate('/login'); }}
                             >
-                                Logout
+                                ログアウト
                             </Button>
                         </Group>
                     </Group>

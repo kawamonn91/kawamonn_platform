@@ -70,26 +70,27 @@ export default function UserSettings() {
 
 
     return (
-        <AppShell header={{ height: 60 }} padding="md">
+        <AppShell header={{ height: 56 }} padding="md">
             <AppShell.Header>
                 <Group h="100%" px="md" justify="space-between">
                     <Group gap="sm">
                         <Button
                             variant="subtle"
+                            color="gray"
+                            size="xs"
                             leftSection={<IconArrowLeft size={16} />}
                             onClick={() => navigate('/')}
                         >
                             戻る
                         </Button>
-                        <Title order={3}>アカウント設定</Title>
+                        <Title order={4} fw={700} style={{ letterSpacing: '-0.02em' }}>アカウント設定</Title>
                     </Group>
                     <Button
-                        variant="light"
-                        color="red"
-                        size="sm"
+                        variant="default"
+                        size="xs"
                         onClick={() => { logout(); navigate('/login'); }}
                     >
-                        Logout
+                        ログアウト
                     </Button>
                 </Group>
             </AppShell.Header>
@@ -97,7 +98,7 @@ export default function UserSettings() {
             <AppShell.Main>
                 <Container size="sm">
                     {/* アカウント名は変えられない(利用者フォルダの名前と、端末のコンテナのマウント先に使っている) */}
-                    <Card withBorder shadow="sm" radius="md" p="lg" mb="lg">
+                    <Card withBorder p="lg" mb="lg">
                         <Title order={4} mb="md">アカウント情報</Title>
                         <TextInput label="アカウント名" value={accountName} disabled />
                     </Card>
@@ -105,7 +106,7 @@ export default function UserSettings() {
                     <Divider my="lg" />
 
                     {/* Password Card */}
-                    <Card withBorder shadow="sm" radius="md" p="lg">
+                    <Card withBorder p="lg">
                         <Title order={4} mb="md">パスワードの変更</Title>
                         <Stack gap="sm">
                             <PasswordInput
@@ -135,7 +136,7 @@ export default function UserSettings() {
                                     {passMsg.text}
                                 </Alert>
                             )}
-                            <Button onClick={handleUpdatePassword}>
+                            <Button color="gray.1" c="dark.9" onClick={handleUpdatePassword}>
                                 パスワードを変更
                             </Button>
                         </Stack>
@@ -144,8 +145,8 @@ export default function UserSettings() {
                     <Divider my="lg" />
 
                     {/* Danger Zone: Account Deletion */}
-                    <Card withBorder shadow="sm" radius="md" p="lg" style={{ borderColor: '#fa5252' }}>
-                        <Title order={4} mb="md" c="red">Danger Zone</Title>
+                    <Card withBorder p="lg" style={{ borderColor: '#7f1d1d' }}>
+                        <Title order={4} mb="md" c="red">アカウントの削除</Title>
                         <Stack gap="sm">
                             <Text size="sm" c="dimmed">
                                 アカウントを削除すると、設定やデータはすべて消去され、復元することはできません。
@@ -156,7 +157,7 @@ export default function UserSettings() {
                         </Stack>
                     </Card>
 
-                    <Text c="dimmed" size="xs" ta="center" mt="lg">
+                    <Text c="dimmed" size="xs" ta="center" mt="lg" ff="monospace">
                         {accountName} · {userRole || 'user'}
                     </Text>
                 </Container>

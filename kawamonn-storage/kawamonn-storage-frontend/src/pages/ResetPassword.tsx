@@ -18,19 +18,19 @@ export default function ResetPassword() {
         
         if (!token) {
             setStatus('error');
-            setMessage('Invalid or missing reset token.');
+            setMessage('再設定トークンが無効または不足しています。');
             return;
         }
 
         if (password !== confirmPassword) {
             setStatus('error');
-            setMessage('Passwords do not match.');
+            setMessage('パスワードが一致しません。');
             return;
         }
 
         if (password.length < 8) {
             setStatus('error');
-            setMessage('Password must be at least 8 characters long.');
+            setMessage('パスワードは8文字以上で入力してください。');
             return;
         }
 
@@ -39,20 +39,20 @@ export default function ResetPassword() {
             setMessage('');
             await api.post('/api/v1/auth/reset-password', { token, new_password: password });
             setStatus('success');
-            setMessage('Your password has been reset successfully.');
+            setMessage('パスワードを再設定しました。');
         } catch (err) {
             setStatus('error');
-            setMessage(getErrorMessage(err, 'Failed to reset password. The link might be expired.'));
+            setMessage(getErrorMessage(err, 'パスワードの再設定に失敗しました。リンクの有効期限が切れている可能性があります。'));
         }
     };
 
     if (!token) {
         return (
-            <Container size={420} my={80}>
-                <Alert icon={<IconAlertCircle size={16} />} title="Invalid Link" color="red">
-                    This password reset link is invalid or missing the token.
-                    <Button fullWidth mt="xl" component={Link} to="/forgot-password" variant="outline">
-                        Request new link
+            <Container size={400} my={64}>
+                <Alert icon={<IconAlertCircle size={16} />} title="無効なリンク" color="red">
+                    このパスワード再設定リンクは無効です。
+                    <Button fullWidth mt="md" component={Link} to="/forgot-password" variant="default">
+                        再設定リンクをもう一度リクエストする
                     </Button>
                 </Alert>
             </Container>
@@ -60,46 +60,46 @@ export default function ResetPassword() {
     }
 
     return (
-        <Container size={420} my={80}>
-            <Title ta="center">
-                Create new password
+        <Container size={400} my={64}>
+            <Title order={3} fw={700} mb={4} style={{ letterSpacing: '-0.02em' }}>
+                新しいパスワードの設定
             </Title>
-            <Text c="dimmed" size="sm" ta="center" mt={5}>
-                Enter your new secure password below
+            <Text c="dimmed" size="xs" mb="lg">
+                8文字以上の新しいパスワードを入力してください
             </Text>
 
-            <Paper withBorder shadow="md" p={30} mt={30} radius="md">
+            <Paper withBorder p={24}>
                 {status === 'success' ? (
-                    <Alert icon={<IconCheck size={16} />} title="Success" color="green">
+                    <Alert icon={<IconCheck size={16} />} title="完了" color="green">
                         {message}
-                        <Button fullWidth mt="xl" component={Link} to="/login" variant="filled">
-                            Go to login
+                        <Button fullWidth mt="md" component={Link} to="/login" color="gray.1" c="dark.9">
+                            ログイン画面へ
                         </Button>
                     </Alert>
                 ) : (
                     <form onSubmit={handleSubmit}>
                         {status === 'error' && (
-                            <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="md">
+                            <Alert icon={<IconAlertCircle size={16} />} title="エラー" color="red" mb="md">
                                 {message}
                             </Alert>
                         )}
                         <Stack>
                             <PasswordInput
-                                label="New Password"
-                                placeholder="8+ characters"
+                                label="新しいパスワード"
+                                placeholder="8文字以上"
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                             />
                             <PasswordInput
-                                label="Confirm Password"
-                                placeholder="Confirm new password"
+                                label="新しいパスワード（確認）"
+                                placeholder="もう一度入力"
                                 required
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                             />
-                            <Button fullWidth mt="xl" type="submit" loading={status === 'loading'}>
-                                Reset password
+                            <Button fullWidth mt="md" type="submit" loading={status === 'loading'} color="gray.1" c="dark.9">
+                                パスワードを更新する
                             </Button>
                         </Stack>
                     </form>

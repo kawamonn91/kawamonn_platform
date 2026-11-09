@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TextInput, PasswordInput, Button, Paper, Title, Container, Text } from '@mantine/core';
+import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
@@ -19,10 +19,10 @@ export default function AdminLogin() {
         setError('');
         try {
             await api.post('/api/v1/auth/admin/login', { account_name: accountName, password });
-            setSuccessMsg('Admin credentials verified. An OTP has been sent to the registered admin email.');
+            setSuccessMsg('認証情報を確認しました。管理者メールへ送信された6桁の確認コードを入力してください。');
             setStep(2);
         } catch (err) {
-            setError(getErrorMessage(err, 'Admin login failed'));
+            setError(getErrorMessage(err, '管理者ログインに失敗しました'));
         }
     };
 
@@ -34,57 +34,62 @@ export default function AdminLogin() {
                 account_name: accountName,
                 otp_code: otpCode
             });
-            // Update auth context state, then navigate (no full reload needed)
             login(res.data.token);
             navigate('/admin');
 
         } catch (err) {
-            setError(getErrorMessage(err, 'Verification failed'));
+            setError(getErrorMessage(err, '確認コードの検証に失敗しました'));
         }
     };
 
     return (
-        <Container size={420} my={40}>
-            <Title ta="center" c="red">Restricted Admin Portal</Title>
-            <Paper withBorder shadow="md" p={30} mt={30} radius="md">
+        <Container size={400} my={64}>
+            <Group justify="space-between" align="baseline" mb={4}>
+                <Title order={3} fw={700} style={{ letterSpacing: '-0.02em' }}>管理者コンソール</Title>
+                <Text size="xs" c="dimmed" ff="monospace">ADMIN</Text>
+            </Group>
+            <Text c="dimmed" size="xs" mb="lg">
+                Kawamonn Storage 管理用ログイン
+            </Text>
+            <Paper withBorder p={24}>
                 {step === 1 ? (
                     <form onSubmit={handleAdminLogin}>
                         <TextInput
-                            label="Admin Username"
-                            placeholder="Superuser ID"
+                            label="管理者アカウント名"
+                            placeholder="管理者ID"
                             required
                             value={accountName}
                             onChange={(e) => setAccountName(e.target.value)}
                         />
                         <PasswordInput
-                            label="Password"
-                            placeholder="Your password"
+                            label="パスワード"
+                            placeholder="パスワード"
                             required
                             mt="md"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
-                        <Button fullWidth mt="xl" color="red" type="submit">
-                            Request Admin Access
+                        <Button fullWidth mt="lg" color="gray.1" c="dark.9" type="submit">
+                            確認コードを送信
                         </Button>
                     </form>
                 ) : (
                     <form onSubmit={handleVerify}>
-                        <Text fw={500} size="sm" mb="md" c="blue">{successMsg}</Text>
+                        <Text fw={500} size="xs" mb="md" c="dimmed">{successMsg}</Text>
                         <TextInput
-                            label="Admin Security OTP"
-                            placeholder="6-digit code"
+                            label="管理者確認コード (OTP)"
+                            placeholder="6桁のコード"
                             required
                             value={otpCode}
                             onChange={(e) => setOtpCode(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
-                        <Button fullWidth mt="xl" color="red" type="submit">
-                            Verify and Login
+                        <Button fullWidth mt="lg" color="gray.1" c="dark.9" type="submit">
+                            認証してログイン
                         </Button>
-                        <Button fullWidth mt="sm" variant="subtle" onClick={() => setStep(1)}>
-                            Back
+                        <Button fullWidth mt="xs" variant="subtle" color="gray" onClick={() => setStep(1)}>
+                            戻る
                         </Button>
                     </form>
                 )}

@@ -16,50 +16,50 @@ export default function ForgotPassword() {
             setMessage('');
             await api.post('/api/v1/auth/forgot-password', { email });
             setStatus('success');
-            setMessage('If an account matches that email, a password reset link has been sent. Please check your inbox.');
+            setMessage('該当するアカウントが存在する場合、パスワード再設定用のリンクをメールで送信しました。');
         } catch (err) {
             setStatus('error');
-            setMessage(getErrorMessage(err, 'Failed to process request'));
+            setMessage(getErrorMessage(err, 'リクエストの処理に失敗しました'));
         }
     };
 
     return (
-        <Container size={420} my={80}>
-            <Title ta="center" className="mantine-Title-root">
-                Forgot your password?
+        <Container size={400} my={64}>
+            <Title order={3} fw={700} mb={4} style={{ letterSpacing: '-0.02em' }}>
+                パスワードの再設定
             </Title>
-            <Text c="dimmed" size="sm" ta="center" mt={5}>
-                Enter your email to get a reset link
+            <Text c="dimmed" size="xs" mb="lg">
+                登録済みのメールアドレスに再設定リンクを送信します
             </Text>
 
-            <Paper withBorder shadow="md" p={30} mt={30} radius="md">
+            <Paper withBorder p={24}>
                 {status === 'success' ? (
-                    <Alert icon={<IconCheck size={16} />} title="Check your email" color="green">
+                    <Alert icon={<IconCheck size={16} />} title="送信完了" color="green">
                         {message}
-                        <Button fullWidth mt="xl" component={Link} to="/login" variant="outline">
-                            Back to login
+                        <Button fullWidth mt="md" component={Link} to="/login" variant="default">
+                            ログイン画面へ戻る
                         </Button>
                     </Alert>
                 ) : (
                     <form onSubmit={handleSubmit}>
                         {status === 'error' && (
-                            <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="md">
+                            <Alert icon={<IconAlertCircle size={16} />} title="エラー" color="red" mb="md">
                                 {message}
                             </Alert>
                         )}
                         <TextInput
-                            label="Email"
-                            placeholder="you@example.com"
+                            label="メールアドレス"
+                            placeholder="s1234567@u-aizu.ac.jp"
                             required
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                         />
                         <Group justify="space-between" mt="lg">
-                            <Anchor component={Link} to="/login" c="dimmed" size="sm">
-                                Back to login
+                            <Anchor component={Link} to="/login" c="dimmed" size="xs">
+                                ログイン画面へ戻る
                             </Anchor>
-                            <Button type="submit" loading={status === 'loading'}>
-                                Send reset link
+                            <Button type="submit" loading={status === 'loading'} color="gray.1" c="dark.9">
+                                再設定リンクを送信
                             </Button>
                         </Group>
                     </form>
