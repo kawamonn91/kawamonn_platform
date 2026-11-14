@@ -14,13 +14,13 @@ import { type StorageEntry, readFileBytes } from '../api/storage';
 const THUMBNAIL_MAX_BYTES = 10 * 1024 * 1024;
 
 function getFileIcon(mime: string, size = 48) {
-    if (mime === 'directory') return <IconFolder size={size} color="#4dabf7" />;
-    if (mime.startsWith('image/')) return <IconPhoto size={size} color="#f59f00" />;
-    if (mime.startsWith('video/')) return <IconFile size={size} color="#e64980" />;
-    if (mime.startsWith('text/')) return <IconFileCode size={size} color="#74c0fc" />;
-    if (mime.includes('pdf')) return <IconFileText size={size} color="#e64980" />;
-    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return <IconFileZip size={size} color="#a9e34b" />;
-    return <IconFileText size={size} color="#adb5bd" />;
+    if (mime === 'directory') return <IconFolder size={size} color="var(--ink-2)" />;
+    if (mime.startsWith('image/')) return <IconPhoto size={size} color="var(--ink-3)" />;
+    if (mime.startsWith('video/')) return <IconFile size={size} color="var(--ink-3)" />;
+    if (mime.startsWith('text/')) return <IconFileCode size={size} color="var(--ink-3)" />;
+    if (mime.includes('pdf')) return <IconFileText size={size} color="var(--ink-3)" />;
+    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return <IconFileZip size={size} color="var(--ink-3)" />;
+    return <IconFileText size={size} color="var(--ink-3)" />;
 }
 
 export interface FileCardProps {
@@ -125,7 +125,7 @@ export default function FileCard({ entry, onOpen, onDownload, onDelete, onRename
                 <Card.Section>
                     <AspectRatio
                         ratio={4 / 3}
-                        bg="var(--mantine-color-gray-0, #f8f9fa)"
+                        bg="var(--surface-2)"
                         style={{ overflow: 'hidden', borderBottom: '1px solid var(--mantine-color-gray-2)' }}
                     >
                         {thumbUrl ? (

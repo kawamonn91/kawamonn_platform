@@ -65,25 +65,25 @@ export default function TextEditorModal({
             onClose={onClose}
             title={
                 <Group gap="xs">
-                    <IconFileText size={14} color="#58a6ff" />
-                    <Text size="sm" c="white" style={{ fontFamily: 'monospace' }}>
+                    <IconFileText size={14} color="var(--ink-2)" />
+                    <Text size="sm" style={{ fontFamily: 'monospace' }}>
                         {path.split('/').pop()}
                     </Text>
-                    {isNew && <Badge size="xs" color="teal">新規</Badge>}
+                    {isNew && <Badge size="xs" color="gray">新規</Badge>}
                 </Group>
             }
             size="xl"
             fullScreen={isMobile}
             closeButtonProps={{ tabIndex: -1 }}
             styles={{
-                content: { background: '#0d1117', border: '1px solid #30363d' },
-                header: { background: '#161b22', borderBottom: '1px solid #30363d' },
+                content: { background: 'var(--surface)', border: '1px solid var(--line)' },
+                header: { background: 'var(--surface-2)', borderBottom: '1px solid var(--line)' },
             }}
         >
             <Stack gap={0}>
                 {loading ? (
                     <Stack align="center" py="xl">
-                        <Loader size="sm" color="blue" />
+                        <Loader size="sm" />
                         <Text size="xs" c="dimmed">読み込んでいます...</Text>
                     </Stack>
                 ) : (
@@ -96,10 +96,10 @@ export default function TextEditorModal({
                         style={{
                             width: '100%',
                             height: '60vh',
-                            background: '#010409',
-                            border: '1px solid #30363d',
+                            background: 'var(--surface)',
+                            border: '1px solid var(--line)',
                             borderRadius: 4,
-                            color: '#e6edf3',
+                            color: 'var(--ink)',
                             fontFamily: '"JetBrains Mono", "Fira Code", monospace',
                             fontSize: 13,
                             lineHeight: 1.6,
@@ -117,8 +117,8 @@ export default function TextEditorModal({
                 )}
 
                 <div style={{
-                    background: '#161b22',
-                    borderTop: '1px solid #30363d',
+                    background: 'var(--surface-2)',
+                    borderTop: '1px solid var(--line)',
                     padding: '6px 10px',
                     display: 'flex',
                     flexWrap: 'wrap',
@@ -132,8 +132,8 @@ export default function TextEditorModal({
                             <Text
                                 size="xs"
                                 style={{
-                                    background: '#30363d',
-                                    color: '#e6edf3',
+                                    background: 'var(--line)',
+                                    color: 'var(--ink)',
                                     fontFamily: 'monospace',
                                     padding: '1px 5px',
                                     borderRadius: 3,
@@ -152,7 +152,7 @@ export default function TextEditorModal({
                             キャンセル
                         </Button>
                         <Button
-                            color="blue"
+                           
                             size="xs"
                             leftSection={<IconCheck size={13} />}
                             onClick={onSave}

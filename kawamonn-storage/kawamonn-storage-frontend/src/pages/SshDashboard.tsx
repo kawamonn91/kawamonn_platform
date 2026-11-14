@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-    AppShell, Group, Title, Button, Container, Text, Badge,
-    Card, Stack, Loader, Alert, Grid, Progress, Tooltip, ActionIcon,
+    AppShell, Group, Button, Container, Text, Badge,
+    Stack, Loader, Alert, Grid, Tooltip, ActionIcon,
 } from '@mantine/core';
 import {
-    IconTerminal2, IconPlayerPlay, IconPlayerStop, IconRefresh,
-    IconAlertCircle, IconArrowLeft, IconCpu, IconDeviceFloppy,
-    IconPlugConnected, IconPlugConnectedX, IconFolder,
+    IconPlayerPlay, IconPlayerStop, IconRefresh, IconAlertCircle, IconArrowLeft,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -18,6 +16,7 @@ import '@xterm/xterm/css/xterm.css';
 import api from '../api/client';
 import { useAuth } from '../AuthContext';
 import SshFileBrowser from '../components/SshFileBrowser';
+import { BrandLockup } from '../components/Brand';
 
 type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
 
@@ -68,29 +67,31 @@ export default function SshDashboard() {
         if (!terminalRef.current || xtermRef.current) return;
 
         const term = new Terminal({
+            // 端末の配色は T-tech の共通トークンのダーク（紙と墨の中間色）に合わせる
             theme: {
-                background: '#0d1117',
-                foreground: '#e6edf3',
-                cursor: '#58a6ff',
-                cursorAccent: '#0d1117',
-                black: '#484f58',
-                red: '#ff7b72',
-                green: '#3fb950',
-                yellow: '#d29922',
-                blue: '#58a6ff',
-                magenta: '#bc8cff',
-                cyan: '#39c5cf',
-                white: '#b1bac4',
-                brightBlack: '#6e7681',
-                brightRed: '#ffa198',
-                brightGreen: '#56d364',
-                brightYellow: '#e3b341',
-                brightBlue: '#79c0ff',
-                brightMagenta: '#d2a8ff',
-                brightCyan: '#56d4dd',
-                brightWhite: '#f0f6fc',
+                background: '#161412',
+                foreground: '#edeae5',
+                cursor: '#f0795a',
+                cursorAccent: '#161412',
+                selectionBackground: '#4a453e',
+                black: '#4a453e',
+                red: '#f2877c',
+                green: '#6bc28e',
+                yellow: '#e0b25a',
+                blue: '#7aa7d6',
+                magenta: '#c79bd1',
+                cyan: '#6cc3c0',
+                white: '#d6d1c9',
+                brightBlack: '#8c867d',
+                brightRed: '#f6a59c',
+                brightGreen: '#8fd4a9',
+                brightYellow: '#ecc77d',
+                brightBlue: '#9cc0e6',
+                brightMagenta: '#d9b6e0',
+                brightCyan: '#90d6d3',
+                brightWhite: '#f7f6f3',
             },
-            fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
+            fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, Menlo, "BIZ UDGothic", monospace',
             fontSize: 14,
             lineHeight: 1.4,
             cursorStyle: 'block',
@@ -233,28 +234,28 @@ export default function SshDashboard() {
         socket.on('session_ended', () => {
             endSession();
             setSessionState('idle');
-            xtermRef.current?.writeln('\r\n\x1b[33m[Session ended. Press "Launch Terminal" to reconnect.]\x1b[0m');
+            xtermRef.current?.writeln('\r\n\x1b[33m[セッションが終わりました。「端末を開く」でつなぎ直せます]\x1b[0m');
         });
 
         socket.on('error', (err: { message: string }) => {
-            setErrorMsg(err.message || 'Connection error');
+            setErrorMsg(err.message || '接続できませんでした');
             setSessionState('error');
         });
 
         socket.on('exception', (err: { message?: string }) => {
-            setErrorMsg(err?.message || 'Terminal error');
+            setErrorMsg(err?.message || '端末でエラーが起きました');
             setSessionState('error');
             socket.disconnect();
         });
 
         socket.on('connect_error', (err) => {
-            setErrorMsg(`Connection failed: ${err.message}`);
+            setErrorMsg(`接続できませんでした（${err.message}）`);
             setSessionState('error');
         });
 
         socket.on('disconnect', (reason) => {
             if (connectedRef.current) {
-                xtermRef.current?.writeln(`\r\n\x1b[31m[Disconnected: ${reason}]\x1b[0m`);
+                xtermRef.current?.writeln(`\r\n\x1b[31m[切断しました: ${reason}]\x1b[0m`);
             }
             endSession();
             setSessionState('idle');
@@ -284,54 +285,43 @@ export default function SshDashboard() {
     };
 
     const statusLabel: Record<SessionState, string> = {
-        idle: 'Offline',
-        starting: 'Starting...',
-        connected: 'Connected',
-        disconnecting: 'Disconnecting...',
-        error: 'Error',
+        idle: '未接続',
+        starting: '起動しています…',
+        connected: '接続中',
+        disconnecting: '切断しています…',
+        error: 'エラー',
     };
 
+    const containerLabels: Record<string, string> = {
+        running: '動いています',
+        exited: '止まっています',
+        created: '作成済み',
+        paused: '一時停止中',
+    };
     const containerRunning = containerStatus?.container_status === 'running';
+    const containerLabel = containerStatus
+        ? containerLabels[containerStatus.container_status] ?? containerStatus.container_status
+        : 'まだありません';
+    const canLaunch = sessionState === 'idle' || sessionState === 'error';
 
     return (
-        <AppShell header={{ height: 60 }} padding="md">
-            {/* ── Header ── */}
-            <AppShell.Header
-                style={{
-                    background: 'linear-gradient(135deg, #0d1117 0%, #161b22 100%)',
-                    borderBottom: '1px solid #30363d',
-                }}
-            >
-                <Group h="100%" px="md" justify="space-between">
-                    <Group gap="sm">
-                        <ActionIcon
-                            variant="subtle"
-                            color="gray"
-                            size="lg"
-                            onClick={() => navigate('/')}
-                            title="戻る"
-                        >
-                            <IconArrowLeft size={18} />
-                        </ActionIcon>
-                        <Group gap="xs">
-                            <IconTerminal2 size={22} color="#58a6ff" />
-                            <Title order={4} c="white">Sandbox Terminal</Title>
-                        </Group>
-                        <Badge
-                            color={statusColor[sessionState]}
-                            variant="dot"
-                            size="sm"
-                        >
+        <AppShell header={{ height: 56 }} padding="md">
+            <AppShell.Header>
+                <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+                    <Group gap="md" wrap="nowrap">
+                        <BrandLockup section="SSH 端末" to="/" />
+                        <Badge color={statusColor[sessionState]} variant="dot" size="sm" visibleFrom="xs">
                             {statusLabel[sessionState]}
                         </Badge>
                     </Group>
-                    <Group gap="sm">
-                        <Tooltip label="ステータス更新">
+                    <Group gap="xs" wrap="nowrap">
+                        <Tooltip label="状態を更新">
                             <ActionIcon
                                 variant="subtle"
                                 color="gray"
                                 onClick={() => void fetchStatus()}
                                 disabled={sessionState === 'starting'}
+                                aria-label="状態を更新"
                             >
                                 <IconRefresh size={16} />
                             </ActionIcon>
@@ -340,227 +330,103 @@ export default function SshDashboard() {
                             variant="subtle"
                             color="gray"
                             size="xs"
+                            leftSection={<IconArrowLeft size={14} />}
                             onClick={() => navigate('/')}
                         >
-                            Storage
+                            ストレージ
                         </Button>
-                        <Button
-                            variant="light"
-                            color="red"
-                            size="xs"
-                            onClick={() => { logout(); navigate('/login'); }}
-                        >
-                            Logout
+                        <Button variant="default" size="xs" onClick={() => { logout(); navigate('/login'); }}>
+                            ログアウト
                         </Button>
                     </Group>
                 </Group>
             </AppShell.Header>
 
-            {/* ── Main ── */}
-            <AppShell.Main
-                style={{ background: '#010409', minHeight: 'calc(100vh - 60px)' }}
-            >
-                <Container size="xl" pt="md">
+            <AppShell.Main>
+                <Container size="xl" pt="xs">
                     <Grid>
-                        {/* 左: リソース情報 + ファイルブラウザ */}
+                        {/* 左: 環境の状態・ファイル・入っているもの */}
                         <Grid.Col span={{ base: 12, md: 3 }}>
                             <Stack gap="sm">
-                                <Card
-                                    padding="md"
-                                    radius="md"
-                                    style={{
-                                        background: '#161b22',
-                                        border: '1px solid #30363d',
-                                    }}
-                                >
-                                    <Text size="xs" c="dimmed" fw={600} tt="uppercase" mb="sm">
-                                        Environment
-                                    </Text>
-                                    <Stack gap="xs">
+                                <div className="ssh-panel" style={{ padding: 16 }}>
+                                    <p className="ssh-label">環境</p>
+                                    <Stack gap={6}>
                                         <Group justify="space-between">
-                                            <Text size="sm" c="gray.4">Status</Text>
-                                            <Badge
-                                                color={containerRunning ? 'green' : 'gray'}
-                                                size="sm"
-                                                variant="light"
-                                            >
-                                                {containerStatus?.container_status || 'Not provisioned'}
+                                            <Text size="sm" c="dimmed">コンテナ</Text>
+                                            <Badge color={containerRunning ? 'green' : 'gray'} size="sm" variant="light">
+                                                {containerLabel}
                                             </Badge>
                                         </Group>
-
                                         {containerStatus && (
                                             <>
-                                                <Group justify="space-between" align="center">
-                                                    <Group gap={4}>
-                                                        <IconCpu size={14} color="#58a6ff" />
-                                                        <Text size="sm" c="gray.4">CPU</Text>
-                                                    </Group>
-                                                    <Text size="sm" c="white">
+                                                <Group justify="space-between">
+                                                    <Text size="sm" c="dimmed">CPU の上限</Text>
+                                                    <Text size="sm">
                                                         {Number(containerStatus.resource_usage.cpu_limit) * 100}%
                                                     </Text>
                                                 </Group>
-                                                <Progress
-                                                    value={Number(containerStatus.resource_usage.cpu_limit) * 100}
-                                                    size="xs"
-                                                    color="blue"
-                                                    style={{ marginTop: -4 }}
-                                                />
-
-                                                <Group justify="space-between" align="center" mt="xs">
-                                                    <Group gap={4}>
-                                                        <IconDeviceFloppy size={14} color="#3fb950" />
-                                                        <Text size="sm" c="gray.4">Memory</Text>
-                                                    </Group>
-                                                    <Text size="sm" c="white">
-                                                        {containerStatus.resource_usage.memory_limit}
-                                                    </Text>
+                                                <Group justify="space-between">
+                                                    <Text size="sm" c="dimmed">メモリの上限</Text>
+                                                    <Text size="sm">{containerStatus.resource_usage.memory_limit}</Text>
                                                 </Group>
                                             </>
                                         )}
                                     </Stack>
-                                </Card>
+                                </div>
 
-                                {sessionState === 'idle' || sessionState === 'error' ? (
+                                {canLaunch ? (
                                     <Button
                                         fullWidth
-                                        size="md"
-                                        color="blue"
-                                        variant="filled"
-                                        leftSection={<IconPlayerPlay size={18} />}
+                                        leftSection={<IconPlayerPlay size={16} />}
                                         onClick={() => void handleLaunch()}
-                                        loading={false}
-                                        style={{
-                                            background: 'linear-gradient(135deg, #1f6feb, #388bfd)',
-                                            boxShadow: '0 0 20px rgba(88, 166, 255, 0.3)',
-                                        }}
                                     >
-                                        Launch Terminal
+                                        端末を開く
                                     </Button>
                                 ) : sessionState === 'starting' ? (
-                                    <Button fullWidth size="md" variant="light" color="yellow" loading>
-                                        Starting...
+                                    <Button fullWidth variant="light" loading>
+                                        起動しています
                                     </Button>
                                 ) : (
                                     <Button
                                         fullWidth
-                                        size="md"
-                                        color="red"
-                                        variant="light"
-                                        leftSection={<IconPlayerStop size={18} />}
+                                        variant="default"
+                                        leftSection={<IconPlayerStop size={16} />}
                                         onClick={handleDisconnect}
                                     >
-                                        Disconnect
+                                        切断する
                                     </Button>
                                 )}
 
-                                <Card
-                                    padding={0}
-                                    radius="md"
-                                    style={{
-                                        background: '#0d1117',
-                                        border: '1px solid #30363d',
-                                        overflow: 'hidden',
-                                        height: 520,
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                    }}
+                                <div
+                                    className="ssh-panel"
+                                    style={{ overflow: 'hidden', height: 520, display: 'flex', flexDirection: 'column' }}
                                 >
-                                    <Group
-                                        px="sm"
-                                        py={6}
-                                        justify="space-between"
-                                        style={{ borderBottom: '1px solid #30363d', background: '#161b22', flexShrink: 0 }}
-                                    >
-                                        <Group gap="xs">
-                                            <IconFolder size={13} color="#58a6ff" />
-                                            <Text size="xs" c="gray.3" fw={600}>Files</Text>
-                                        </Group>
-                                    </Group>
+                                    <div className="ssh-panel-head">ファイル</div>
                                     <div style={{ flex: 1, overflow: 'hidden' }}>
                                         <SshFileBrowser />
                                     </div>
-                                </Card>
+                                </div>
 
-                                <Card
-                                    padding="md"
-                                    radius="md"
-                                    style={{
-                                        background: '#161b22',
-                                        border: '1px solid #30363d',
-                                    }}
-                                >
-                                    <Text size="xs" c="dimmed" fw={600} tt="uppercase" mb="sm">
-                                        Installed
-                                    </Text>
-                                    {[
-                                        { label: 'Python 3', color: '#3fb950' },
-                                        { label: 'Java 21', color: '#58a6ff' },
-                                        { label: 'C / C++', color: '#bc8cff' },
-                                        { label: 'C# (.NET 8)', color: '#d29922' },
-                                        { label: 'LaTeX', color: '#39c5cf' },
-                                        { label: 'Git', color: '#ff7b72' },
-                                    ].map(({ label, color }) => (
-                                        <Group key={label} gap="xs" mb={4}>
-                                            <div
-                                                style={{
-                                                    width: 6,
-                                                    height: 6,
-                                                    borderRadius: '50%',
-                                                    background: color,
-                                                    flexShrink: 0,
-                                                }}
-                                            />
-                                            <Text size="xs" c="gray.3">{label}</Text>
-                                        </Group>
-                                    ))}
-                                </Card>
+                                <div className="ssh-panel" style={{ padding: 16 }}>
+                                    <p className="ssh-label">入っている言語とツール</p>
+                                    <ul className="ssh-tools">
+                                        {['Python 3', 'Java 21', 'C / C++', 'C# (.NET 8)', 'LaTeX', 'Git'].map((label) => (
+                                            <li key={label}>{label}</li>
+                                        ))}
+                                    </ul>
+                                </div>
                             </Stack>
                         </Grid.Col>
 
-                        {/* 右: ターミナルエリア */}
+                        {/* 右: 端末 */}
                         <Grid.Col span={{ base: 12, md: 9 }}>
-                            <Card
-                                padding={0}
-                                radius="md"
-                                style={{
-                                    background: '#0d1117',
-                                    border: `1px solid ${sessionState === 'connected' ? '#238636' : '#30363d'}`,
-                                    overflow: 'hidden',
-                                    transition: 'border-color 0.3s ease',
-                                    boxShadow:
-                                        sessionState === 'connected'
-                                            ? '0 0 30px rgba(35, 134, 54, 0.15)'
-                                            : 'none',
-                                }}
-                            >
-                                <Group
-                                    px="md"
-                                    py="xs"
-                                    style={{
-                                        background: '#161b22',
-                                        borderBottom: '1px solid #30363d',
-                                    }}
-                                    justify="space-between"
-                                >
-                                    <Group gap="sm">
-                                        <Group gap={6}>
-                                            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f56' }} />
-                                            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffbd2e' }} />
-                                            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#27c93f' }} />
-                                        </Group>
-                                        <Text size="xs" c="dimmed" ff="monospace">
-                                            {accountName}@kawamonn-sandbox
-                                        </Text>
-                                    </Group>
-                                    <Group gap="xs">
-                                        {sessionState === 'connected' && (
-                                            <IconPlugConnected size={14} color="#3fb950" />
-                                        )}
-                                        {sessionState === 'idle' && (
-                                            <IconPlugConnectedX size={14} color="#484f58" />
-                                        )}
-                                    </Group>
-                                </Group>
+                            <div className="ssh-terminal">
+                                <div className="ssh-terminal-head">
+                                    <span>{accountName} の端末</span>
+                                    <span className={`ssh-terminal-state${sessionState === 'connected' ? ' is-on' : ''}`}>
+                                        {statusLabel[sessionState]}
+                                    </span>
+                                </div>
 
                                 <div style={{ position: 'relative', minHeight: 480 }}>
                                     <div
@@ -577,36 +443,13 @@ export default function SshDashboard() {
                                         }}
                                     />
 
-                                    {(sessionState === 'idle' || sessionState === 'error') && (
-                                        <Stack
-                                            align="center"
-                                            justify="center"
-                                            style={{ minHeight: 480, padding: 32 }}
-                                            gap="lg"
-                                        >
-                                            <div
-                                                style={{
-                                                    width: 80,
-                                                    height: 80,
-                                                    borderRadius: '50%',
-                                                    background: 'rgba(88,166,255,0.08)',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    border: '1px solid rgba(88,166,255,0.2)',
-                                                }}
-                                            >
-                                                <IconTerminal2 size={36} color="#58a6ff" />
-                                            </div>
-                                            <div style={{ textAlign: 'center' }}>
-                                                <Text size="lg" fw={600} c="white" mb={4}>
-                                                    Your Sandbox is Ready
-                                                </Text>
-                                                <Text size="sm" c="dimmed" maw={320}>
-                                                    Python, Java, C/C++, C#, LaTeX が利用できます。<br />
-                                                    あなた専用の隔離された Linux 環境です。
-                                                </Text>
-                                            </div>
+                                    {canLaunch && (
+                                        <div className="ssh-terminal-empty">
+                                            <h2>自分専用の Linux 環境</h2>
+                                            <p>
+                                                Python・Java・C/C++・C#・LaTeX が使えます。ほかの人とは分けられた環境です。
+                                                左の「ファイル」からも、中のファイルを開いて編集できます。
+                                            </p>
 
                                             {sessionState === 'error' && errorMsg && (
                                                 <Alert
@@ -614,44 +457,30 @@ export default function SshDashboard() {
                                                     color="red"
                                                     title="接続エラー"
                                                     maw={380}
+                                                    ta="left"
                                                 >
                                                     {errorMsg}
                                                 </Alert>
                                             )}
 
                                             <Button
-                                                size="lg"
-                                                color="blue"
-                                                leftSection={<IconPlayerPlay size={20} />}
+                                                size="md"
+                                                leftSection={<IconPlayerPlay size={18} />}
                                                 onClick={() => void handleLaunch()}
-                                                style={{
-                                                    background: 'linear-gradient(135deg, #1f6feb, #388bfd)',
-                                                    boxShadow: '0 0 24px rgba(88,166,255,0.4)',
-                                                    padding: '0 36px',
-                                                }}
                                             >
-                                                {sessionState === 'error' ? 'Retry Connection' : 'Launch Terminal'}
+                                                {sessionState === 'error' ? 'もう一度つなぐ' : '端末を開く'}
                                             </Button>
-                                        </Stack>
+                                        </div>
                                     )}
 
                                     {sessionState === 'starting' && !terminalReady && (
-                                        <Stack
-                                            align="center"
-                                            justify="center"
-                                            style={{
-                                                position: 'absolute',
-                                                inset: 0,
-                                                background: 'rgba(13,17,23,0.85)',
-                                                zIndex: 10,
-                                            }}
-                                        >
-                                            <Loader color="blue" size="md" />
-                                            <Text size="sm" c="dimmed">Starting container...</Text>
-                                        </Stack>
+                                        <div className="ssh-terminal-cover">
+                                            <Loader size="sm" />
+                                            <span>コンテナを起動しています…</span>
+                                        </div>
                                     )}
                                 </div>
-                            </Card>
+                            </div>
                         </Grid.Col>
                     </Grid>
                 </Container>

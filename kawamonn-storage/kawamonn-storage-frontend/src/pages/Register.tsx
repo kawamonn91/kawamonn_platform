@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group } from '@mantine/core';
 import { useNavigate, Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
+import { BrandLockup } from '../components/Brand';
 
 export default function Register() {
     const [email, setEmail] = useState('');
@@ -43,8 +44,9 @@ export default function Register() {
 
     return (
         <Container size={400} my={64}>
+            <Group mb="xl"><BrandLockup /></Group>
             <Group justify="space-between" align="baseline" mb={4}>
-                <Title order={3} fw={700} style={{ letterSpacing: '-0.02em' }}>新規アカウント登録</Title>
+                <Title order={3} fw={700}>新規アカウント登録</Title>
                 <Text size="xs" c="dimmed" ff="monospace">@u-aizu.ac.jp</Text>
             </Group>
             <Text c="dimmed" size="xs" mb="lg">
@@ -80,7 +82,7 @@ export default function Register() {
                             onChange={(e) => setPassword(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
-                        <Button fullWidth mt="lg" type="submit" color="gray.1" c="dark.9">
+                        <Button fullWidth mt="lg" type="submit">
                             確認コードを送信
                         </Button>
                     </form>
@@ -95,7 +97,7 @@ export default function Register() {
                             onChange={(e) => setOtpCode(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
-                        <Button fullWidth mt="lg" type="submit" color="gray.1" c="dark.9">
+                        <Button fullWidth mt="lg" type="submit">
                             登録を完了する
                         </Button>
                         <Button fullWidth mt="xs" variant="subtle" color="gray" onClick={() => setStep(1)}>

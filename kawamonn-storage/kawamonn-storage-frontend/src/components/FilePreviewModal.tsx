@@ -125,7 +125,7 @@ export default function FilePreviewModal({ entry, onClose, onDownload }: FilePre
                 <Stack align="center" gap="md">
                     <canvas
                         ref={pdfCanvasRef}
-                        style={{ maxWidth: '100%', border: '1px solid #dee2e6', borderRadius: 4 }}
+                        style={{ maxWidth: '100%', border: '1px solid var(--line)', borderRadius: 4 }}
                     />
                     <Group gap="sm">
                         <Button

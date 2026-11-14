@@ -23,7 +23,7 @@ export default function FolderCard({ entry, onOpen, onDelete, onRename }: Folder
             >
                 <Group justify="space-between" wrap="nowrap">
                     <Group gap="sm" wrap="nowrap" style={{ overflow: 'hidden' }}>
-                        <IconFolder size={24} color="#4dabf7" style={{ flexShrink: 0 }} />
+                        <IconFolder size={24} color="var(--ink-2)" style={{ flexShrink: 0 }} />
                         <Text fw={500} size="sm" truncate>
                             {entry.name}
                         </Text>
