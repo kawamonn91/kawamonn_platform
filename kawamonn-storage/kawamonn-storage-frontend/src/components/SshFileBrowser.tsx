@@ -98,17 +98,17 @@ export default function SshFileBrowser() {
             <Group
                 px="sm"
                 py={5}
-                style={{ borderBottom: '1px solid #30363d', background: '#0d1117', flexShrink: 0 }}
+                style={{ borderBottom: '1px solid var(--line)', background: 'var(--surface)', flexShrink: 0 }}
             >
                 <ActionIcon size="xs" variant="subtle" color="gray" onClick={() => void fetchDir('/')} title="ホームへ">
                     <IconHome size={12} />
                 </ActionIcon>
                 {breadcrumbs.map((crumb, i) => (
                     <Group key={crumb.path} gap={2} wrap="nowrap">
-                        {i > 0 && <IconChevronRight size={9} color="#484f58" />}
+                        {i > 0 && <IconChevronRight size={9} color="var(--ink-3)" />}
                         <Text
                             size="xs"
-                            c={i === breadcrumbs.length - 1 ? 'white' : 'blue'}
+                            c={i === breadcrumbs.length - 1 ? undefined : 'dimmed'}
                             style={{ cursor: i === breadcrumbs.length - 1 ? 'default' : 'pointer', whiteSpace: 'nowrap' }}
                             onClick={() => i < breadcrumbs.length - 1 && void fetchDir(crumb.path)}
                         >
@@ -123,12 +123,12 @@ export default function SshFileBrowser() {
                 px="xs"
                 py={5}
                 gap={4}
-                style={{ borderBottom: '1px solid #30363d', background: '#161b22', flexShrink: 0 }}
+                style={{ borderBottom: '1px solid var(--line)', background: 'var(--surface-2)', flexShrink: 0 }}
             >
                 <Button
                     size="compact-xs"
                     variant="subtle"
-                    color="blue"
+                    color="gray"
                     leftSection={<IconFolderPlus size={12} />}
                     onClick={openFolderModal}
                 >
@@ -137,7 +137,7 @@ export default function SshFileBrowser() {
                 <Button
                     size="compact-xs"
                     variant="subtle"
-                    color="teal"
+                    color="gray"
                     leftSection={<IconFilePlus size={12} />}
                     onClick={openFileModal}
                 >
@@ -182,11 +182,11 @@ export default function SshFileBrowser() {
                                 style={{
                                     cursor: 'pointer',
                                     borderRadius: 4,
-                                    color: '#8b949e',
+                                    color: 'var(--ink-3)',
                                 }}
                                 className="file-row"
                             >
-                                <IconFolder size={15} color="#8b949e" />
+                                <IconFolder size={15} color="var(--ink-3)" />
                                 <Text size="xs">..</Text>
                             </Group>
                         )}
@@ -211,16 +211,16 @@ export default function SshFileBrowser() {
                             >
                                 <Group gap="xs" style={{ flex: 1, minWidth: 0 }}>
                                     {entry.isDir ? (
-                                        <IconFolder size={15} color="#58a6ff" style={{ flexShrink: 0 }} />
+                                        <IconFolder size={15} color="var(--ink-2)" style={{ flexShrink: 0 }} />
                                     ) : isEditableFile(entry.name, entry.mime) ? (
-                                        <IconFileText size={15} color="#3fb950" style={{ flexShrink: 0 }} />
+                                        <IconFileText size={15} color="var(--ink-3)" style={{ flexShrink: 0 }} />
                                     ) : (
-                                        <IconFile size={15} color="#8b949e" style={{ flexShrink: 0 }} />
+                                        <IconFile size={15} color="var(--ink-3)" style={{ flexShrink: 0 }} />
                                     )}
                                     <Text
                                         size="xs"
                                         style={{
-                                            color: entry.isDir ? '#58a6ff' : '#c9d1d9',
+                                            color: entry.isDir ? 'var(--ink-2)' : 'var(--ink-2)',
                                             overflow: 'hidden',
                                             textOverflow: 'ellipsis',
                                             whiteSpace: 'nowrap',
@@ -247,12 +247,12 @@ export default function SshFileBrowser() {
                                                 <IconDots size={12} />
                                             </ActionIcon>
                                         </Menu.Target>
-                                        <Menu.Dropdown styles={{ dropdown: { background: '#161b22', borderColor: '#30363d' } }}>
+                                        <Menu.Dropdown styles={{ dropdown: { background: 'var(--surface-2)', borderColor: 'var(--line)' } }}>
                                             {!entry.isDir && isEditableFile(entry.name, entry.mime) && (
                                                 <Menu.Item
                                                     leftSection={<IconEdit size={13} />}
                                                     onClick={(e) => { e.stopPropagation(); void openEditor(entry.path); }}
-                                                    styles={{ item: { color: '#c9d1d9', fontSize: 12 } }}
+                                                    styles={{ item: { color: 'var(--ink-2)', fontSize: 12 } }}
                                                 >
                                                     編集
                                                 </Menu.Item>
@@ -261,7 +261,7 @@ export default function SshFileBrowser() {
                                                 <Menu.Item
                                                     leftSection={<IconDownload size={13} />}
                                                     onClick={(e) => { e.stopPropagation(); void downloadEntry(entry); }}
-                                                    styles={{ item: { color: '#c9d1d9', fontSize: 12 } }}
+                                                    styles={{ item: { color: 'var(--ink-2)', fontSize: 12 } }}
                                                 >
                                                     ダウンロード
                                                 </Menu.Item>
@@ -269,7 +269,7 @@ export default function SshFileBrowser() {
                                             <Menu.Item
                                                 leftSection={<IconEdit size={13} />}
                                                 onClick={(e) => { e.stopPropagation(); openRename(entry); }}
-                                                styles={{ item: { color: '#c9d1d9', fontSize: 12 } }}
+                                                styles={{ item: { color: 'var(--ink-2)', fontSize: 12 } }}
                                             >
                                                 名前変更
                                             </Menu.Item>

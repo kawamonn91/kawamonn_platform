@@ -1,26 +1,18 @@
-:root {
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Hiragino Sans", "Yu Gothic UI", Roboto, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: dark;
-  color: #f4f4f5;
-  background-color: #09090b;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+@import './styles/tokens.css';
 
 * {
   box-sizing: border-box;
 }
 
+/* ページの地は紙の色。カードやヘッダーは Mantine の body（surface）の色になる */
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #09090b;
-  color: #f4f4f5;
+  background-color: var(--paper);
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
@@ -33,16 +25,176 @@ body {
 }
 
 a {
-  color: #e4e4e7;
-  text-decoration: underline;
+  color: var(--accent);
   text-underline-offset: 3px;
 }
 
-a:hover {
-  color: #ffffff;
+/* 日本語の見出しを文節の切れ目で折り返す（対応していないブラウザは通常の折り返し） */
+h1,
+h2,
+h3,
+h4 {
+  word-break: auto-phrase;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .folder-card:hover {
-  border-color: #52525b !important;
-  background-color: #18181b !important;
+  border-color: var(--line-strong) !important;
+  background-color: var(--surface-2) !important;
+}
+
+/* ---------- 共通のマーク ---------- */
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand-seal {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+.brand-name {
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+}
+
+.brand-section {
+  color: var(--ink-3);
+  font-size: 0.875rem;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.brand-name {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .brand-section {
+    display: none;
+  }
+}
+
+/* ---------- SSH 端末の画面 ---------- */
+
+.ssh-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.ssh-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ssh-label {
+  margin: 0 0 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ssh-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ssh-tools li {
+  padding: 1px 8px;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+
+/* 端末そのものは、ライトモードでも暗い色のまま（文字の色分けが読みやすいように） */
+.ssh-terminal {
+  overflow: hidden;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--line);
+  background: #161412;
+}
+
+.ssh-terminal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #1e1b18;
+  border-bottom: 1px solid #34302b;
+  color: #b5afa6;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.ssh-terminal-state {
+  font-family: var(--font-sans);
+}
+
+.ssh-terminal-state.is-on {
+  color: #6bc28e;
+}
+
+.ssh-terminal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 480px;
+  padding: 32px;
+  color: #b5afa6;
+  text-align: center;
+}
+
+.ssh-terminal-empty h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  color: #edeae5;
+}
+
+.ssh-terminal-empty p {
+  margin: 0;
+  max-width: 26em;
+  font-size: 0.875rem;
+  line-height: 1.8;
+}
+
+.ssh-terminal-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgb(22 20 18 / 0.88);
+  color: #b5afa6;
+  font-size: 0.875rem;
 }

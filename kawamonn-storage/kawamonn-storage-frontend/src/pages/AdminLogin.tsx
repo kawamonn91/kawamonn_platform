@@ -3,6 +3,7 @@ import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group 
 import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
+import { BrandLockup } from '../components/Brand';
 
 export default function AdminLogin() {
     const [accountName, setAccountName] = useState('');
@@ -44,12 +45,13 @@ export default function AdminLogin() {
 
     return (
         <Container size={400} my={64}>
+            <Group mb="xl"><BrandLockup section="管理" /></Group>
             <Group justify="space-between" align="baseline" mb={4}>
-                <Title order={3} fw={700} style={{ letterSpacing: '-0.02em' }}>管理者コンソール</Title>
+                <Title order={3} fw={700}>管理者コンソール</Title>
                 <Text size="xs" c="dimmed" ff="monospace">ADMIN</Text>
             </Group>
             <Text c="dimmed" size="xs" mb="lg">
-                Kawamonn Storage 管理用ログイン
+                ストレージの管理用ログイン
             </Text>
             <Paper withBorder p={24}>
                 {step === 1 ? (
@@ -70,7 +72,7 @@ export default function AdminLogin() {
                             onChange={(e) => setPassword(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
-                        <Button fullWidth mt="lg" color="gray.1" c="dark.9" type="submit">
+                        <Button fullWidth mt="lg" type="submit">
                             確認コードを送信
                         </Button>
                     </form>
@@ -85,7 +87,7 @@ export default function AdminLogin() {
                             onChange={(e) => setOtpCode(e.target.value)}
                         />
                         {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
-                        <Button fullWidth mt="lg" color="gray.1" c="dark.9" type="submit">
+                        <Button fullWidth mt="lg" type="submit">
                             認証してログイン
                         </Button>
                         <Button fullWidth mt="xs" variant="subtle" color="gray" onClick={() => setStep(1)}>

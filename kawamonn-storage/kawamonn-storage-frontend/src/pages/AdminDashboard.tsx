@@ -21,6 +21,7 @@ import { UserDetailModal } from '../components/admin/UserDetailModal';
 import { TempPasswordModal } from '../components/admin/TempPasswordModal';
 import { UserCreateCard } from '../components/admin/UserCreateCard';
 import { BroadcastCard } from '../components/admin/BroadcastCard';
+import { BrandLockup } from '../components/Brand';
 
 export default function AdminDashboard() {
     const [users, setUsers] = useState<AdminUser[]>([]);
@@ -96,7 +97,7 @@ export default function AdminDashboard() {
         <AppShell header={{ height: 60 }} padding="md">
             <AppShell.Header>
                 <Group h="100%" px="md" justify="space-between">
-                    <Title order={3}>Kawamonn Admin</Title>
+                    <BrandLockup section="管理" to="/" />
                     <Group>
                         <Button variant="subtle" onClick={() => navigate('/')}>Storage</Button>
                         <Button variant="light" color="red" onClick={() => {

@@ -3,6 +3,7 @@ import { TextInput, Button, Paper, Title, Container, Text, Alert, Group, Anchor 
 import { Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { IconAlertCircle, IconCheck } from '@tabler/icons-react';
+import { BrandLockup } from '../components/Brand';
 
 export default function ForgotPassword() {
     const [email, setEmail] = useState('');
@@ -25,7 +26,8 @@ export default function ForgotPassword() {
 
     return (
         <Container size={400} my={64}>
-            <Title order={3} fw={700} mb={4} style={{ letterSpacing: '-0.02em' }}>
+            <Group mb="xl"><BrandLockup /></Group>
+            <Title order={3} fw={700} mb={4}>
                 パスワードの再設定
             </Title>
             <Text c="dimmed" size="xs" mb="lg">
@@ -58,7 +60,7 @@ export default function ForgotPassword() {
                             <Anchor component={Link} to="/login" c="dimmed" size="xs">
                                 ログイン画面へ戻る
                             </Anchor>
-                            <Button type="submit" loading={status === 'loading'} color="gray.1" c="dark.9">
+                            <Button type="submit" loading={status === 'loading'}>
                                 再設定リンクを送信
                             </Button>
                         </Group>

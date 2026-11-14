@@ -3,6 +3,7 @@ import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group 
 import { useNavigate, Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
+import { BrandLockup } from '../components/Brand';
 
 export default function Login() {
     const [accountName, setAccountName] = useState('');
@@ -26,12 +27,9 @@ export default function Login() {
 
     return (
         <Container size={400} my={64}>
-            <Group justify="space-between" align="baseline" mb={4}>
-                <Title order={3} fw={700} style={{ letterSpacing: '-0.02em' }}>Kawamonn Storage</Title>
-                <Text size="xs" c="dimmed" ff="monospace">storage.kawamonn.com</Text>
-            </Group>
-            <Text c="dimmed" size="xs" mb="lg">
-                会津大学生専用オンラインストレージ・SSH端末
+            <Group mb="xs"><BrandLockup /></Group>
+            <Text c="dimmed" size="sm" mb="lg">
+                会津大学の学生のための、ファイルの保存と自分専用の Linux 環境です。
             </Text>
 
             <Paper withBorder p={24}>
@@ -53,14 +51,14 @@ export default function Login() {
                         onChange={(e) => setPassword(e.target.value)}
                     />
                     <Group justify="flex-end" mt="xs">
-                        <Link to="/forgot-password" style={{ fontSize: '12px', color: '#a1a1aa' }}>
+                        <Link to="/forgot-password" style={{ fontSize: '12px', color: 'var(--ink-3)' }}>
                             パスワードを忘れた場合
                         </Link>
                     </Group>
 
                     {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
 
-                    <Button fullWidth mt="lg" type="submit" color="gray.1" c="dark.9">
+                    <Button fullWidth mt="lg" type="submit">
                         ログイン
                     </Button>
                 </form>

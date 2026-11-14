@@ -83,7 +83,7 @@ export default function UserSettings() {
                         >
                             戻る
                         </Button>
-                        <Title order={4} fw={700} style={{ letterSpacing: '-0.02em' }}>アカウント設定</Title>
+                        <Title order={4} fw={700}>アカウント設定</Title>
                     </Group>
                     <Button
                         variant="default"
@@ -136,7 +136,7 @@ export default function UserSettings() {
                                     {passMsg.text}
                                 </Alert>
                             )}
-                            <Button color="gray.1" c="dark.9" onClick={handleUpdatePassword}>
+                            <Button onClick={handleUpdatePassword}>
                                 パスワードを変更
                             </Button>
                         </Stack>
@@ -145,7 +145,7 @@ export default function UserSettings() {
                     <Divider my="lg" />
 
                     {/* Danger Zone: Account Deletion */}
-                    <Card withBorder p="lg" style={{ borderColor: '#7f1d1d' }}>
+                    <Card withBorder p="lg" style={{ borderColor: 'var(--danger)' }}>
                         <Title order={4} mb="md" c="red">アカウントの削除</Title>
                         <Stack gap="sm">
                             <Text size="sm" c="dimmed">

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { PasswordInput, Button, Paper, Title, Container, Text, Alert, Stack } from '@mantine/core';
+import { PasswordInput, Button, Paper, Title, Container, Text, Alert, Stack, Group } from '@mantine/core';
 import { useSearchParams, Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { IconAlertCircle, IconCheck } from '@tabler/icons-react';
+import { BrandLockup } from '../components/Brand';
 
 export default function ResetPassword() {
     const [searchParams] = useSearchParams();
@@ -49,6 +50,7 @@ export default function ResetPassword() {
     if (!token) {
         return (
             <Container size={400} my={64}>
+            <Group mb="xl"><BrandLockup /></Group>
                 <Alert icon={<IconAlertCircle size={16} />} title="無効なリンク" color="red">
                     このパスワード再設定リンクは無効です。
                     <Button fullWidth mt="md" component={Link} to="/forgot-password" variant="default">
@@ -61,7 +63,8 @@ export default function ResetPassword() {
 
     return (
         <Container size={400} my={64}>
-            <Title order={3} fw={700} mb={4} style={{ letterSpacing: '-0.02em' }}>
+            <Group mb="xl"><BrandLockup /></Group>
+            <Title order={3} fw={700} mb={4}>
                 新しいパスワードの設定
             </Title>
             <Text c="dimmed" size="xs" mb="lg">
@@ -72,7 +75,7 @@ export default function ResetPassword() {
                 {status === 'success' ? (
                     <Alert icon={<IconCheck size={16} />} title="完了" color="green">
                         {message}
-                        <Button fullWidth mt="md" component={Link} to="/login" color="gray.1" c="dark.9">
+                        <Button fullWidth mt="md" component={Link} to="/login">
                             ログイン画面へ
                         </Button>
                     </Alert>
@@ -98,7 +101,7 @@ export default function ResetPassword() {
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                             />
-                            <Button fullWidth mt="md" type="submit" loading={status === 'loading'} color="gray.1" c="dark.9">
+                            <Button fullWidth mt="md" type="submit" loading={status === 'loading'}>
                                 パスワードを更新する
                             </Button>
                         </Stack>

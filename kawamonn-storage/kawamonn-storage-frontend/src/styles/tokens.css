@@ -1,0 +1,70 @@
+/*
+ * T-tech の共通デザイントークン（色・文字・角丸）。
+ * www・store・UoA Online（ストレージと学習）で同じ値を使う。元は kawamonn-labs の
+ * src/styles/tokens.css。値を変えるときは全サービスのこのファイルをそろえて直す。
+ *
+ * 色の考え方：紙と墨の中間色を土台にし、差し色は朱（会津塗の朱）1色だけ。
+ * 朱は「押すもの」と「進み具合」にだけ使い、飾りには使わない。
+ * 文字色はどれも背景に対して WCAG AA（4.5:1）以上。
+ */
+:root {
+  color-scheme: light dark;
+
+  --paper: #faf9f7;
+  --surface: #ffffff;
+  --surface-2: #f3f1ee;
+  --line: #e3e0db;
+  --line-strong: #c9c4bc;
+  --ink: #1c1a17;
+  --ink-2: #57524b;
+  --ink-3: #736d64;
+
+  --accent: #c8442a;
+  --accent-hover: #a93820;
+  --accent-ink: #ffffff;
+  --accent-soft: #fbede8;
+
+  --ok: #2f7d4f;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+
+  --code-bg: #f3f1ee;
+  --pre-bg: #24211d;
+  --pre-ink: #ece8e1;
+
+  --font-sans: system-ui, -apple-system, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic UI',
+    Meiryo, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, 'BIZ UDGothic', monospace;
+
+  --radius-s: 3px;
+  --radius-m: 6px;
+  --shadow-pop: 0 6px 24px rgb(28 26 23 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #161412;
+    --surface: #1e1b18;
+    --surface-2: #26221e;
+    --line: #34302b;
+    --line-strong: #4a453e;
+    --ink: #edeae5;
+    --ink-2: #b5afa6;
+    --ink-3: #8c867d;
+
+    --accent: #f0795a;
+    --accent-hover: #f4927a;
+    --accent-ink: #1c1a17;
+    --accent-soft: #2e1f1a;
+
+    --ok: #6bc28e;
+    --danger: #f2877c;
+    --danger-soft: #331b18;
+
+    --code-bg: #26221e;
+    --pre-bg: #0f0e0c;
+    --pre-ink: #ece8e1;
+
+    --shadow-pop: 0 6px 24px rgb(0 0 0 / 0.45);
+  }
+}

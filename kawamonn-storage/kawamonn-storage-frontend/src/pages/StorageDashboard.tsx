@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import {
-    AppShell, Group, Title, Button, Container, Text, Grid,
+    AppShell, Group, Button, Container, Text, Grid,
     Breadcrumbs, Anchor, Center, Stack, Burger, Drawer, Divider, Progress, Modal,
 } from '@mantine/core';
 import {
@@ -25,6 +25,7 @@ import {
     NewFolderModal,
     NewFileModal,
 } from '../components/FileBrowserModals';
+import { BrandLockup } from '../components/Brand';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -210,7 +211,7 @@ export default function StorageDashboard() {
                     justify="flex-start"
                     onClick={() => navigate('/ssh')}
                 >
-                    SSH サンドボックス
+                    SSH 端末
                 </Button>
             </Stack>
             {usage && usage.quota > 0 && (
@@ -248,7 +249,7 @@ export default function StorageDashboard() {
                 onChange={handleFolderUpload}
             />
 
-            <Drawer opened={drawerOpened} onClose={closeDrawer} title="Kawamonn Storage" size="xs">
+            <Drawer opened={drawerOpened} onClose={closeDrawer} title="UoA Online ストレージ" size="xs">
                 {sidebarJsx}
             </Drawer>
 
@@ -266,10 +267,10 @@ export default function StorageDashboard() {
                                 hiddenFrom="sm"
                                 size="sm"
                             />
-                            <Title order={4} fw={700} style={{ letterSpacing: '-0.02em' }}>Kawamonn Storage</Title>
-                            <Text size="xs" c="dimmed" ff="monospace" visibleFrom="sm">storage.kawamonn.com</Text>
+                            <BrandLockup to="/" />
                         </Group>
                         <Group gap="xs">
+                            <Button component="a" href="https://labs.kawamonn.com/" variant="subtle" color="gray" size="xs" visibleFrom="sm">学習</Button>
                             {userRole === 'admin' && (
                                 <Button variant="subtle" color="gray" size="xs" onClick={() => navigate('/admin')}>管理者画面</Button>
                             )}
@@ -323,7 +324,7 @@ export default function StorageDashboard() {
                         ) : entries.length === 0 ? (
                             <Center py="xl">
                                 <Stack align="center" gap="xs">
-                                    <IconFolder size={64} color="lightgray" />
+                                    <IconFolder size={64} color="var(--ink-3)" />
                                     <Text c="dimmed">ファイルはありません</Text>
                                 </Stack>
                             </Center>
