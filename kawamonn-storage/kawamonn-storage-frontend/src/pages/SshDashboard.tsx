@@ -309,7 +309,7 @@ export default function SshDashboard() {
             <AppShell.Header>
                 <Group h="100%" px="md" justify="space-between" wrap="nowrap">
                     <Group gap="md" wrap="nowrap">
-                        <BrandLockup section="SSH 端末" to="/" />
+                        <BrandLockup section="SSH 端末" />
                         <Badge color={statusColor[sessionState]} variant="dot" size="sm" visibleFrom="xs">
                             {statusLabel[sessionState]}
                         </Badge>
@@ -333,7 +333,7 @@ export default function SshDashboard() {
                             leftSection={<IconArrowLeft size={14} />}
                             onClick={() => navigate('/')}
                         >
-                            ストレージ
+                            ファイルへ戻る
                         </Button>
                         <Button variant="default" size="xs" onClick={() => { logout(); navigate('/login'); }}>
                             ログアウト

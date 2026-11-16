@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -17,7 +17,11 @@ import { decodeToken } from './api/token';
 // -----------------------------------------------
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (isAuthenticated) return children;
+  // ログインのあと、開こうとしていたページ（例: /ssh）へ戻れるようにする
+  const here = location.pathname + location.search;
+  return <Navigate to={here === '/' ? '/login' : `/login?next=${encodeURIComponent(here)}`} replace />;
 }
 
 function AdminRoute({ children }: { children: React.ReactElement }) {
