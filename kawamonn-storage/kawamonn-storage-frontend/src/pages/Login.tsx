@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { TextInput, PasswordInput, Button, Paper, Title, Container, Text, Group } from '@mantine/core';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
 import { BrandLockup } from '../components/Brand';
+import { safeNext } from '../api/safe-next';
 
 export default function Login() {
     const [accountName, setAccountName] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const [params] = useSearchParams();
     const { login } = useAuth();
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -19,7 +21,7 @@ export default function Login() {
 
             // Update auth context state first, then navigate
             login(res.data.token);
-            navigate('/');
+            navigate(safeNext(params.get('next')), { replace: true });
         } catch (err) {
             setError(getErrorMessage(err, 'ログインに失敗しました'));
         }

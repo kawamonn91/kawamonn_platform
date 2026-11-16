@@ -17,6 +17,14 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+  /*
+   * 文章の折り返し: 日本語は文節の切れ目で折り返し（Chrome・Edge）、禁則を厳しめにし、
+   * 段落の最後の行に1〜2文字だけ残さない。長い URL やファイル名は、はみ出すときだけ途中で折る。
+   */
+  line-break: strict;
+  word-break: auto-phrase;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
 }
 
 #root {
@@ -29,12 +37,20 @@ a {
   text-underline-offset: 3px;
 }
 
-/* 日本語の見出しを文節の切れ目で折り返す（対応していないブラウザは通常の折り返し） */
+/* 見出しは、行の長さをそろえる */
 h1,
 h2,
 h3,
 h4 {
-  word-break: auto-phrase;
+  text-wrap: balance;
+}
+
+/* コードとファイルの中身は、文節で区切らない */
+code,
+pre,
+kbd,
+samp {
+  word-break: normal;
 }
 
 :focus-visible {
@@ -55,6 +71,54 @@ h4 {
   gap: 10px;
   color: var(--ink);
   text-decoration: none;
+}
+
+.brand-button {
+  min-height: 40px;
+  margin-left: -8px;
+  padding: 0 8px;
+  border-radius: var(--radius-m);
+}
+
+.brand-button:hover,
+.brand-button[aria-expanded='true'] {
+  background: var(--surface-2);
+}
+
+.brand-caret {
+  flex: none;
+  color: var(--ink-3);
+  transition: transform 0.15s;
+}
+
+.brand-button[aria-expanded='true'] .brand-caret {
+  transform: rotate(180deg);
+}
+
+.brand-menu-item {
+  display: grid;
+  gap: 1px;
+}
+
+.brand-menu-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.brand-menu-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.brand-menu-note {
+  font-size: 0.75rem;
+  color: var(--ink-3);
 }
 
 .brand-seal {

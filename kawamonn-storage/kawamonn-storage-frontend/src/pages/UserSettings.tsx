@@ -7,6 +7,7 @@ import { IconArrowLeft, IconCheck, IconAlertCircle } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../api/client';
 import { useAuth } from '../AuthContext';
+import { BrandLockup } from '../components/Brand';
 
 export default function UserSettings() {
     const navigate = useNavigate();
@@ -73,25 +74,25 @@ export default function UserSettings() {
         <AppShell header={{ height: 56 }} padding="md">
             <AppShell.Header>
                 <Group h="100%" px="md" justify="space-between">
-                    <Group gap="sm">
+                    <BrandLockup section="アカウント設定" />
+                    <Group gap="xs" wrap="nowrap">
                         <Button
                             variant="subtle"
                             color="gray"
                             size="xs"
-                            leftSection={<IconArrowLeft size={16} />}
+                            leftSection={<IconArrowLeft size={14} />}
                             onClick={() => navigate('/')}
                         >
-                            戻る
+                            ファイルへ戻る
                         </Button>
-                        <Title order={4} fw={700}>アカウント設定</Title>
+                        <Button
+                            variant="default"
+                            size="xs"
+                            onClick={() => { logout(); navigate('/login'); }}
+                        >
+                            ログアウト
+                        </Button>
                     </Group>
-                    <Button
-                        variant="default"
-                        size="xs"
-                        onClick={() => { logout(); navigate('/login'); }}
-                    >
-                        ログアウト
-                    </Button>
                 </Group>
             </AppShell.Header>
 

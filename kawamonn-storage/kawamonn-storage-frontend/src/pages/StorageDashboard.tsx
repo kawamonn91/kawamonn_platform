@@ -267,7 +267,7 @@ export default function StorageDashboard() {
                                 hiddenFrom="sm"
                                 size="sm"
                             />
-                            <BrandLockup to="/" />
+                            <BrandLockup admin={userRole === 'admin'} />
                         </Group>
                         <Group gap="xs">
                             <Button component="a" href="https://labs.kawamonn.com/" variant="subtle" color="gray" size="xs" visibleFrom="sm">学習</Button>

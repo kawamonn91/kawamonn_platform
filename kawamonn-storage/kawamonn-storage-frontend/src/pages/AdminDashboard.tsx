@@ -97,13 +97,13 @@ export default function AdminDashboard() {
         <AppShell header={{ height: 60 }} padding="md">
             <AppShell.Header>
                 <Group h="100%" px="md" justify="space-between">
-                    <BrandLockup section="管理" to="/" />
-                    <Group>
-                        <Button variant="subtle" onClick={() => navigate('/')}>Storage</Button>
-                        <Button variant="light" color="red" onClick={() => {
+                    <BrandLockup section="管理" admin />
+                    <Group gap="xs" wrap="nowrap">
+                        <Button variant="subtle" color="gray" size="xs" onClick={() => navigate('/')}>ファイルへ戻る</Button>
+                        <Button variant="default" size="xs" onClick={() => {
                             logout();
                             navigate('/admin/login');
-                        }}>Logout</Button>
+                        }}>ログアウト</Button>
                     </Group>
                 </Group>
             </AppShell.Header>
