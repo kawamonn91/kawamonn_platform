@@ -10,6 +10,11 @@ RUN apt-get update && apt-get install -y \
     sudo \
     curl \
     wget \
+    dnsutils \
+    iproute2 \
+    iputils-ping \
+    iputils-tracepath \
+    netcat-openbsd \
     git \
     vim \
     nano \

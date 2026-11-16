@@ -212,6 +212,21 @@ export class SshService {
     return job;
   }
 
+  /**
+   * コンテナが、今の kawamonn-ssh-base:latest より前のイメージで作られているか。
+   * イメージを確かめられないとき(イメージが無い・Docker の応答が無い)は、作り直さずに今のものを使う
+   */
+  private async isImageOutdated(
+    data: Docker.ContainerInspectInfo,
+  ): Promise<boolean> {
+    try {
+      const current = await this.docker.getImage(IMAGE).inspect();
+      return Boolean(current.Id && data.Image && current.Id !== data.Image);
+    } catch {
+      return false;
+    }
+  }
+
   private async prepareContainer(username: string): Promise<string> {
     const dbContainer = await this.prisma.sshContainer.findFirst({
       where: { username },
@@ -227,15 +242,17 @@ export class SshService {
       // コンテナが Docker から消えている → 下で作り直す
     }
 
-    // 無い・Docker から消えている・専用のネットワークに入っていない(以前に作った)なら、作り直す。
-    // ホームのファイルはそのまま残る
+    // 無い・Docker から消えている・専用のネットワークに入っていない(以前に作った)・
+    // イメージが作り直されて古くなっている、なら作り直す。ホームのファイルはそのまま残る
+    // (利用者は sudo を持たないので、ホームの外に自分で入れたものは無い)
     if (
       !dbContainer?.container_id ||
       !container ||
       !data ||
       !Object.keys(data.NetworkSettings?.Networks ?? {}).includes(
         SANDBOX_NETWORK,
-      )
+      ) ||
+      (await this.isImageOutdated(data))
     ) {
       const name = await this.provisionContainer(username);
       await this.waitForUser(name, username);
