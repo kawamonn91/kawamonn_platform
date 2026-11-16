@@ -160,6 +160,8 @@ describe('SshService', () => {
       const opts = docker.createContainer.mock.calls[0][0];
       expect(opts.HostConfig.NetworkMode).toBe(SANDBOX_NETWORK);
       expect(opts.HostConfig.Dns).toEqual(['1.1.1.1', '1.0.0.1']);
+      // ホストの検索ドメイン（サーバー側の内部の DNS 名）を写さない
+      expect(opts.HostConfig.DnsSearch).toEqual(['.']);
       expect(docker.createNetwork).not.toHaveBeenCalled();
     });
 
@@ -220,6 +222,7 @@ describe('SshService', () => {
         inspect: jest.fn().mockResolvedValue({
           State: { Status: 'exited' },
           NetworkSettings: { Networks: { [SANDBOX_NETWORK]: {} } },
+          HostConfig: { DnsSearch: ['.'] },
         }),
         remove: jest.fn(),
         start: jest.fn().mockResolvedValue(undefined),
@@ -244,6 +247,7 @@ describe('SshService', () => {
         inspect: jest.fn().mockResolvedValue({
           State: { Status: 'running' },
           NetworkSettings: { Networks: { [SANDBOX_NETWORK]: {} } },
+          HostConfig: { DnsSearch: ['.'] },
         }),
       });
       mockPrisma.sshContainer.findFirst.mockResolvedValue({
@@ -256,12 +260,39 @@ describe('SshService', () => {
       expect(waitForUser).not.toHaveBeenCalled();
     });
 
+    it('検索ドメインを外す前に作ったコンテナは、消して作り直す', async () => {
+      const old = {
+        inspect: jest.fn().mockResolvedValue({
+          Image: 'sha256:current',
+          State: { Status: 'running' },
+          NetworkSettings: { Networks: { [SANDBOX_NETWORK]: {} } },
+          HostConfig: { DnsSearch: null },
+        }),
+        remove: jest.fn().mockResolvedValue(undefined),
+      };
+      docker.getContainer.mockReturnValue(old);
+      mockPrisma.sshContainer.findFirst.mockResolvedValue({
+        id: '1',
+        container_id: 'old',
+      });
+      mockPrisma.sshContainer.findMany.mockResolvedValue([
+        { id: '1', container_id: 'old' },
+      ]);
+
+      const name = await service.ensureContainerRunning('alice');
+
+      expect(name).toMatch(/^kawamonn-ssh-alice-/);
+      expect(old.remove).toHaveBeenCalledWith({ force: true });
+      expect(docker.createContainer).toHaveBeenCalledTimes(1);
+    });
+
     describe('イメージが作り直されたとき', () => {
       const runningOn = (image: string) => ({
         inspect: jest.fn().mockResolvedValue({
           Image: image,
           State: { Status: 'running' },
           NetworkSettings: { Networks: { [SANDBOX_NETWORK]: {} } },
+          HostConfig: { DnsSearch: ['.'] },
         }),
         remove: jest.fn().mockResolvedValue(undefined),
       });
