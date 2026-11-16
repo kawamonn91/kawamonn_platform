@@ -11,6 +11,7 @@ jest.mock('dockerode', () =>
     createContainer: jest.fn(),
     getNetwork: jest.fn(),
     createNetwork: jest.fn(),
+    getImage: jest.fn(),
   })),
 );
 
@@ -55,6 +56,9 @@ describe('SshService', () => {
     });
     docker.createContainer.mockResolvedValue({
       start: jest.fn().mockResolvedValue(undefined),
+    });
+    docker.getImage.mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({ Id: 'sha256:current' }),
     });
   });
   afterEach(() => existsSpy.mockRestore());
@@ -250,6 +254,62 @@ describe('SshService', () => {
         'live',
       );
       expect(waitForUser).not.toHaveBeenCalled();
+    });
+
+    describe('イメージが作り直されたとき', () => {
+      const runningOn = (image: string) => ({
+        inspect: jest.fn().mockResolvedValue({
+          Image: image,
+          State: { Status: 'running' },
+          NetworkSettings: { Networks: { [SANDBOX_NETWORK]: {} } },
+        }),
+        remove: jest.fn().mockResolvedValue(undefined),
+      });
+      beforeEach(() => {
+        mockPrisma.sshContainer.findFirst.mockResolvedValue({
+          id: '1',
+          container_id: 'live',
+        });
+        mockPrisma.sshContainer.findMany.mockResolvedValue([
+          { id: '1', container_id: 'live' },
+        ]);
+      });
+
+      it('古いイメージで作ったコンテナは、消して今のイメージで作り直す', async () => {
+        const old = runningOn('sha256:old');
+        docker.getContainer.mockReturnValue(old);
+
+        const name = await service.ensureContainerRunning('alice');
+
+        expect(name).toMatch(/^kawamonn-ssh-alice-/);
+        expect(old.remove).toHaveBeenCalledWith({ force: true });
+        expect(docker.createContainer).toHaveBeenCalledTimes(1);
+        expect(waitForUser).toHaveBeenCalledWith(name, 'alice');
+      });
+
+      it('今のイメージで作ったコンテナは、そのまま使う', async () => {
+        const live = runningOn('sha256:current');
+        docker.getContainer.mockReturnValue(live);
+
+        await expect(service.ensureContainerRunning('alice')).resolves.toBe(
+          'live',
+        );
+        expect(live.remove).not.toHaveBeenCalled();
+        expect(docker.createContainer).not.toHaveBeenCalled();
+      });
+
+      it('イメージを確かめられないときは、作り直さずに今のコンテナを使う', async () => {
+        const live = runningOn('sha256:old');
+        docker.getContainer.mockReturnValue(live);
+        docker.getImage.mockReturnValue({
+          inspect: jest.fn().mockRejectedValue(notFound()),
+        });
+
+        await expect(service.ensureContainerRunning('alice')).resolves.toBe(
+          'live',
+        );
+        expect(docker.createContainer).not.toHaveBeenCalled();
+      });
     });
 
     it('同じ利用者について同時に呼ばれても、コンテナは1つだけ作る', async () => {

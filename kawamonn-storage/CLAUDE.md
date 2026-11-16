@@ -167,6 +167,14 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   既存のイメージの上に差し替えの層を重ねて作り直す:
   `cd infrastructure/ssh-provisioning && printf 'FROM kawamonn-ssh-base:latest\nCOPY entrypoint.sh /usr/local/bin/entrypoint.sh\nRUN chmod +x /usr/local/bin/entrypoint.sh\n' | docker build -t kawamonn-ssh-base:latest -f - .`
   (変わるのは新しく作るコンテナから。既存のコンテナを作り直すと、ホーム以外の場所に入れたものは消える)
+- 2026-11 に学習（labs）の教材のため、ネットワークの道具（dnsutils・iproute2・iputils-ping・iputils-tracepath・
+  netcat-openbsd）を Dockerfile に足した。本番のイメージは、作り直さずに既存のイメージへ層を重ねて作る:
+  `printf 'FROM kawamonn-ssh-base:latest\nRUN apt-get update && apt-get install -y --no-install-recommends dnsutils iproute2 iputils-ping iputils-tracepath netcat-openbsd && apt-get clean && rm -rf /var/lib/apt/lists/*\n' | docker build -t kawamonn-ssh-base:latest -f - /tmp`。
+  コンテナに追加の権限は与えていない（ping は Docker の既定のままで一般の利用者が使える）。tcpdump はコンテナに
+  強い権限が要るので入れない
+- **イメージを作り直すと、利用者が次に端末を開いたときに、コンテナを今のイメージで作り直す**
+  （`prepareContainer` がコンテナのイメージ ID と `kawamonn-ssh-base:latest` の ID を比べる）。ホームは残る。
+  利用者は sudo を持たないので、ホームの外に自分で入れたものは無い。同じ利用者がほかの端末を開いたままなら、その接続は切れる
 - 期限切れで削除(`status=deleted`)になったユーザーは、行が DB に残っていても、ログイン(`validateUser`。パスワード照合後に
   照合失敗と同じエラーで拒否)・HTTP の認証(`JwtStrategy`)・ブラウザ端末(`terminal.gateway.ts`)のすべてで拒否する
 - **管理者として扱うのは、確認コード(OTP)を通して発行したトークン(`/auth/admin/verify`、`role: 'admin'`)で、
