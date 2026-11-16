@@ -20,6 +20,9 @@ export const SANDBOX_NETWORK = 'kawamonn-sandbox';
 export const SANDBOX_BRIDGE = 'kw-sandbox';
 const SANDBOX_SUBNET = '172.30.0.0/24';
 const SANDBOX_DNS = ['1.1.1.1', '1.0.0.1'];
+// 検索ドメインを付けない。指定しないと Docker がホストの resolv.conf の search を写し、
+// サーバー側の内部の DNS 名がコンテナの /etc/resolv.conf に見えてしまう
+const SANDBOX_DNS_SEARCH = ['.'];
 
 const IMAGE = 'kawamonn-ssh-base:latest';
 const CPU_LIMIT = 0.5; // CPU 1個の半分
@@ -80,6 +83,7 @@ export class SshService {
           Binds: [`${hostMountPath}:/home/${username}:rw`],
           NetworkMode: SANDBOX_NETWORK,
           Dns: SANDBOX_DNS,
+          DnsSearch: SANDBOX_DNS_SEARCH,
           // ブラウザの端末は docker exec で接続するので、コンテナのポートはどこにも公開しない
           RestartPolicy: { Name: 'unless-stopped' },
         },
@@ -243,8 +247,8 @@ export class SshService {
     }
 
     // 無い・Docker から消えている・専用のネットワークに入っていない(以前に作った)・
-    // イメージが作り直されて古くなっている、なら作り直す。ホームのファイルはそのまま残る
-    // (利用者は sudo を持たないので、ホームの外に自分で入れたものは無い)
+    // 検索ドメインを外す前に作った・イメージが作り直されて古くなっている、なら作り直す。
+    // ホームのファイルはそのまま残る(利用者は sudo を持たないので、ホームの外に自分で入れたものは無い)
     if (
       !dbContainer?.container_id ||
       !container ||
@@ -252,6 +256,7 @@ export class SshService {
       !Object.keys(data.NetworkSettings?.Networks ?? {}).includes(
         SANDBOX_NETWORK,
       ) ||
+      !(data.HostConfig?.DnsSearch ?? []).includes('.') ||
       (await this.isImageOutdated(data))
     ) {
       const name = await this.provisionContainer(username);
