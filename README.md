@@ -1,11 +1,14 @@
-# Kawamonn
+# UoA Online ストレージ・SSH 端末
 
 [![CI](https://github.com/kawamonn91/kawamonn_platform/actions/workflows/ci.yml/badge.svg)](https://github.com/kawamonn91/kawamonn_platform/actions/workflows/ci.yml)
 
 会津大学の学生向けに、Raspberry Pi 5 で自宅運用しているオンラインストレージ + ブラウザ SSH 端末サービスです。
+会津大生向けのサービス群「UoA Online」の一つで、同じ UoA Online の学習（教材サイト、https://labs.kawamonn.com ）は別のリポジトリです。
 新規登録には `@u-aizu.ac.jp` のメールアドレスでのワンタイムコード認証が必要です。
 
 公開 URL: https://storage.kawamonn.com
+
+旧称は Kawamonn で、ディレクトリ名（`kawamonn-storage` など）には旧称が残っています。
 
 ## 構成
 
