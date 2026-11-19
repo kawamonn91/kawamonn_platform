@@ -134,6 +134,12 @@ NAS やディスク構成などの内部情報はここに書かない。そう�
   信じなくなって、全員で1つの回数制限を分け合う)。frontend を更新したら `npm run build` するだけでよい(nginx は再起動
   しなくてよい。`index.html` は `no-cache`、名前にハッシュの付く `assets/` は長くキャッシュさせる)。`dist` は
   `chmod -R a+rX` してから配信する(コンテナの nginx は別の利用者として読む)
+- **学習のサイトに埋め込む端末(`/embed/terminal`、`pages/EmbedTerminal.tsx`)**: 学習(labs.kawamonn.com)の画面の小窓で
+  使う、端末だけのページ。nginx はこのパスだけ `X-Frame-Options` を付けず、`frame-ancestors https://labs.kawamonn.com` で
+  埋め込めるサイトを絞る(ほかのページは `SAMEORIGIN` のまま)。学習の画面とは `postMessage` で、状態(`login-required`・
+  `connected` など)と「貼る」をやり取りする(`lib/terminal-embed.ts`。許したサイトからの指示だけ受け付け、貼る文字から
+  ESC などの制御文字を取り除く。貼るだけで、実行は利用者の Enter)。ログインはストレージと同じトークンで、無ければ新しい
+  タブでのログインを案内する。端末の処理は `hooks/useWebTerminal.ts` に切り出し、「SSH 端末」のページと共有している
 - Docker: `kawamonn_db`(Postgres 15)は **ループバック(`127.0.0.1` と `::1`)だけで公開**し、LAN からは届かない。
   ほかにユーザーごとの SSH コンテナ(`kawamonn-ssh-<user>`)。テーブルは Prisma のマイグレーションで作る
   (compose で初回作成用の SQL は読ませていない)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import {
     AppShell, Group, Button, Container, Text, Badge,
     Stack, Loader, Alert, Grid, Tooltip, ActionIcon,
@@ -8,17 +8,12 @@ import {
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { io, Socket } from 'socket.io-client';
-import { Terminal, type IDisposable } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import api from '../api/client';
 import { useAuth } from '../AuthContext';
 import SshFileBrowser from '../components/SshFileBrowser';
 import { BrandLockup } from '../components/Brand';
-
-type SessionState = 'idle' | 'starting' | 'connected' | 'disconnecting' | 'error';
+import { useWebTerminal, type SessionState } from '../hooks/useWebTerminal';
 
 interface SshStatus {
     container_status: string;
@@ -29,20 +24,7 @@ export default function SshDashboard() {
     const navigate = useNavigate();
     const { logout, accountName } = useAuth();
 
-    // ターミナル状態
-    const [sessionState, setSessionState] = useState<SessionState>('idle');
-    const [errorMsg, setErrorMsg] = useState('');
     const [containerStatus, setContainerStatus] = useState<SshStatus | null>(null);
-    const [terminalReady, setTerminalReady] = useState(false);
-
-    // refs
-    const terminalRef = useRef<HTMLDivElement>(null);
-    const xtermRef = useRef<Terminal | null>(null);
-    const fitAddonRef = useRef<FitAddon | null>(null);
-    const socketRef = useRef<Socket | null>(null);
-    const resizeObserverRef = useRef<ResizeObserver | null>(null);
-    const inputListenerRef = useRef<IDisposable | null>(null);
-    const connectedRef = useRef(false);
 
     const fetchStatus = useCallback(async () => {
         try {
@@ -60,221 +42,16 @@ export default function SshDashboard() {
         (async () => { await fetchStatus(); })();
     }, [fetchStatus]);
 
-    // ----------------------------------------------
-    // xterm.js の初期化（DOM mount 後に1回だけ・同期実行）
-    // ----------------------------------------------
-    const initTerminal = useCallback(() => {
-        if (!terminalRef.current || xtermRef.current) return;
+    // 端末（xterm.js と WebSocket）。つながったら、コンテナの状態を読み直す
+    const onReady = useCallback(() => {
+        void fetchStatus();
+    }, [fetchStatus]);
+    const { terminalRef, sessionState, errorMsg, terminalReady, launch, disconnect } = useWebTerminal({ onReady });
 
-        const term = new Terminal({
-            // 端末の配色は T-tech の共通トークンのダーク（紙と墨の中間色）に合わせる
-            theme: {
-                background: '#161412',
-                foreground: '#edeae5',
-                cursor: '#f0795a',
-                cursorAccent: '#161412',
-                selectionBackground: '#4a453e',
-                black: '#4a453e',
-                red: '#f2877c',
-                green: '#6bc28e',
-                yellow: '#e0b25a',
-                blue: '#7aa7d6',
-                magenta: '#c79bd1',
-                cyan: '#6cc3c0',
-                white: '#d6d1c9',
-                brightBlack: '#8c867d',
-                brightRed: '#f6a59c',
-                brightGreen: '#8fd4a9',
-                brightYellow: '#ecc77d',
-                brightBlue: '#9cc0e6',
-                brightMagenta: '#d9b6e0',
-                brightCyan: '#90d6d3',
-                brightWhite: '#f7f6f3',
-            },
-            fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, Menlo, "BIZ UDGothic", monospace',
-            fontSize: 14,
-            lineHeight: 1.4,
-            cursorStyle: 'block',
-            cursorBlink: true,
-            convertEol: true,
-            scrollback: 5000,
-            allowTransparency: true,
-        });
-
-        const fitAddon = new FitAddon();
-        const webLinksAddon = new WebLinksAddon();
-
-        term.loadAddon(fitAddon);
-        term.loadAddon(webLinksAddon);
-        term.open(terminalRef.current);
-
-        try {
-            fitAddon.fit();
-        } catch {
-            // まだ非表示の間は fit() が失敗することがあるので、表示された直後の effect でもう一度合わせる
-        }
-
-        xtermRef.current = term;
-        fitAddonRef.current = fitAddon;
-        setTerminalReady(true);
-
-        // ターミナルリサイズ監視
-        const ro = new ResizeObserver(() => {
-            try {
-                fitAddon.fit();
-            } catch {
-                // fit() can throw if the terminal was detached from the DOM mid-resize; safe to ignore.
-            }
-            if (socketRef.current?.connected && xtermRef.current) {
-                socketRef.current.emit('resize', {
-                    cols: xtermRef.current.cols,
-                    rows: xtermRef.current.rows,
-                });
-            }
-        });
-        ro.observe(terminalRef.current);
-        resizeObserverRef.current = ro;
-    }, []);
-
-    // 端末要素が表示状態になった直後にサイズを合わせる
-    useEffect(() => {
-        if (sessionState === 'starting' || sessionState === 'connected') {
-            try {
-                fitAddonRef.current?.fit();
-            } catch {
-                // ignore
-            }
-        }
-    }, [sessionState]);
-
-    // ----------------------------------------------
-    // アンマウント時クリーンアップ
-    // ----------------------------------------------
-    useEffect(() => {
-        return () => {
-            resizeObserverRef.current?.disconnect();
-            socketRef.current?.disconnect();
-            xtermRef.current?.dispose();
-        };
-    }, []);
-
-    // ----------------------------------------------
-    // WebSocket 接続＆ターミナル起動
-    // ----------------------------------------------
-    const endSession = useCallback(() => {
-        connectedRef.current = false;
-        inputListenerRef.current?.dispose();
-        inputListenerRef.current = null;
-    }, []);
-
-    const handleLaunch = useCallback(async () => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            navigate('/login');
-            return;
-        }
-
-        // Socket 接続を開始する前に同期的に xterm を初期化し、初期出力の取りこぼしを防ぐ
-        if (terminalRef.current) {
-            terminalRef.current.style.display = 'block';
-        }
-        initTerminal();
-
-        setSessionState('starting');
-        setErrorMsg('');
-
-        // 前の接続(エラーで終わったものなど)が残っていれば閉じてから
-        socketRef.current?.disconnect();
-        endSession();
-
-        // Socket.io 接続
-        const socket = io('/terminal', {
-            auth: { token },
-            transports: ['websocket', 'polling'],
-            reconnection: false,
-        });
-
-        socketRef.current = socket;
-
-        socket.on('connect', () => {
-            try {
-                fitAddonRef.current?.fit();
-            } catch {
-                // ignore
-            }
-            const cols = xtermRef.current?.cols || 80;
-            const rows = xtermRef.current?.rows || 24;
-            socket.emit('start', { cols, rows });
-        });
-
-        socket.on('ready', () => {
-            setSessionState('connected');
-            connectedRef.current = true;
-            void fetchStatus();
-
-            try {
-                fitAddonRef.current?.fit();
-            } catch {
-                // fit() can throw if the terminal was detached from the DOM; safe to ignore.
-            }
-            if (xtermRef.current) {
-                socket.emit('resize', { cols: xtermRef.current.cols, rows: xtermRef.current.rows });
-            }
-
-            inputListenerRef.current?.dispose();
-            inputListenerRef.current = xtermRef.current?.onData((data) => {
-                socket.emit('input', { input: data });
-            }) ?? null;
-        });
-
-        socket.on('output', (data: string) => {
-            xtermRef.current?.write(data);
-        });
-
-        socket.on('session_ended', () => {
-            endSession();
-            setSessionState('idle');
-            xtermRef.current?.writeln('\r\n\x1b[33m[セッションが終わりました。「端末を開く」でつなぎ直せます]\x1b[0m');
-        });
-
-        socket.on('error', (err: { message: string }) => {
-            setErrorMsg(err.message || '接続できませんでした');
-            setSessionState('error');
-        });
-
-        socket.on('exception', (err: { message?: string }) => {
-            setErrorMsg(err?.message || '端末でエラーが起きました');
-            setSessionState('error');
-            socket.disconnect();
-        });
-
-        socket.on('connect_error', (err) => {
-            setErrorMsg(`接続できませんでした（${err.message}）`);
-            setSessionState('error');
-        });
-
-        socket.on('disconnect', (reason) => {
-            if (connectedRef.current) {
-                xtermRef.current?.writeln(`\r\n\x1b[31m[切断しました: ${reason}]\x1b[0m`);
-            }
-            endSession();
-            setSessionState('idle');
-        });
-    }, [navigate, fetchStatus, endSession, initTerminal]);
-
-    // ----------------------------------------------
-    // セッション切断
-    // ----------------------------------------------
-    const handleDisconnect = useCallback(() => {
-        setSessionState('disconnecting');
-        endSession();
-        if (socketRef.current) {
-            socketRef.current.emit('disconnect_session');
-            socketRef.current.disconnect();
-            socketRef.current = null;
-        }
-        setSessionState('idle');
-    }, [endSession]);
+    const handleLaunch = useCallback(() => {
+        if (!launch()) navigate('/login');
+    }, [launch, navigate]);
+    const handleDisconnect = disconnect;
 
     const statusColor: Record<SessionState, string> = {
         idle: 'gray',
