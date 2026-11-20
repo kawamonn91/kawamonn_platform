@@ -262,3 +262,73 @@ samp {
   color: #b5afa6;
   font-size: 0.875rem;
 }
+
+/* 学習のサイトの小窓に埋め込む端末（pages/EmbedTerminal.tsx）。端末だけを画面いっぱいに出す */
+.embed-terminal {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #161412;
+  color: #b5afa6;
+}
+
+.embed-terminal-screen {
+  position: absolute;
+  inset: 0;
+  padding: 6px 4px 4px 8px;
+}
+
+.embed-terminal-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  background: #161412;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.embed-terminal-cover p {
+  margin: 0;
+  max-width: 28em;
+}
+
+.embed-terminal-error {
+  color: #f2877c;
+}
+
+.embed-terminal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+}
+
+.embed-terminal-actions button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #4a453e;
+  border-radius: 3px;
+  background: transparent;
+  color: #edeae5;
+  font: inherit;
+  cursor: pointer;
+}
+
+.embed-terminal-actions button.is-primary {
+  border-color: #f0795a;
+  background: #f0795a;
+  color: #1c1a17;
+  font-weight: 600;
+}
+
+.embed-terminal-actions a {
+  color: #b5afa6;
+}

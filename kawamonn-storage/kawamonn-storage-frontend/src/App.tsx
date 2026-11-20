@@ -8,6 +8,7 @@ import StorageDashboard from './pages/StorageDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin';
 import SshDashboard from './pages/SshDashboard';
+import EmbedTerminal from './pages/EmbedTerminal';
 import UserSettings from './pages/UserSettings';
 import { AuthContext, useAuth } from './AuthContext';
 import { decodeToken } from './api/token';
@@ -77,6 +78,8 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset" element={<ResetPassword />} />
+          {/* 学習のサイトの小窓に埋め込む端末。ログインしていないときは中で案内する */}
+          <Route path="/embed/terminal" element={<EmbedTerminal />} />
           <Route
             path="/"
             element={
